@@ -24,7 +24,8 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _autoValidate = false;
-  bool _isLoading = false;
+  bool _isEmailLoading = false;
+  bool _isGoogleLoading = false;
 
   @override
   void initState() {
@@ -105,7 +106,7 @@ class _RegisterPageState extends State<RegisterPage> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
-      _isLoading = true;
+      _isEmailLoading = true;
     });
 
     try {
@@ -132,8 +133,8 @@ class _RegisterPageState extends State<RegisterPage> {
 
         print('Showing success message and navigating...');
 
-        // Wait a moment for the user to see the success message
-        await Future.delayed(const Duration(milliseconds: 1000));
+        // Wait longer for the user to see the success message
+        await Future.delayed(const Duration(milliseconds: 2500));
 
         // Navigate to appropriate page after successful registration
         if (mounted) {
@@ -169,9 +170,94 @@ class _RegisterPageState extends State<RegisterPage> {
     } finally {
       if (mounted) {
         setState(() {
-          _isLoading = false;
+          _isEmailLoading = false;
         });
         print('Loading state set to false');
+      }
+    }
+  }
+
+  Future<void> _signUpWithGoogle() async {
+    print('Google Sign-Up button pressed');
+    setState(() {
+      _isGoogleLoading = true;
+    });
+
+    try {
+      print('Calling AuthService.signInWithGoogle() for registration...');
+      final result = await _authService.signInWithGoogle();
+      print('AuthService.signInWithGoogle() returned: $result');
+
+      if (result != null && mounted) {
+        print('Google sign-up successful, showing success message...');
+
+        // Show success message and wait for it to be visible
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Account created successfully with Google!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        print('Success message shown, waiting before navigation...');
+
+        // Wait longer for the user to see the success message
+        await Future.delayed(const Duration(milliseconds: 2500));
+
+        // Navigate to appropriate page after successful registration
+        if (mounted) {
+          print('Checking admin status for navigation...');
+          final isAdmin = _authService.isAdmin();
+          print('Is admin: $isAdmin');
+
+          // Reset loading state just before navigation
+          setState(() {
+            _isGoogleLoading = false;
+          });
+
+          // Check if user is admin and redirect accordingly
+          if (isAdmin) {
+            print('Navigating to AdminPage...');
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => const AdminPage()),
+              (route) => false, // Remove all previous routes
+            );
+          } else {
+            print('Navigating to HomePage...');
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => const HomePage()),
+              (route) => false, // Remove all previous routes
+            );
+          }
+          print('Navigation completed');
+        }
+      } else {
+        print(
+          'Google sign-up result was null (user cancelled) or widget not mounted',
+        );
+        // Reset loading state when user cancels
+        if (mounted) {
+          setState(() {
+            _isGoogleLoading = false;
+          });
+        }
+      }
+    } catch (e) {
+      print('Google sign-up error in register page: $e');
+      if (mounted) {
+        setState(() {
+          _isGoogleLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Google sign-up failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
       }
     }
   }
@@ -571,7 +657,9 @@ class _RegisterPageState extends State<RegisterPage> {
                         ],
                       ),
                       child: ElevatedButton(
-                        onPressed: _isLoading ? null : _submitForm,
+                        onPressed: (_isEmailLoading || _isGoogleLoading)
+                            ? null
+                            : _submitForm,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
                           shadowColor: Colors.transparent,
@@ -579,7 +667,7 @@ class _RegisterPageState extends State<RegisterPage> {
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
-                        child: _isLoading
+                        child: _isEmailLoading
                             ? const SizedBox(
                                 width: 20,
                                 height: 20,
@@ -595,6 +683,107 @@ class _RegisterPageState extends State<RegisterPage> {
                                   fontWeight: FontWeight.w600,
                                   color: Colors.white,
                                 ),
+                              ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Divider with "OR"
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: Colors.grey.shade300,
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(
+                            'OR',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: Colors.grey.shade300,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Google Sign-Up Button
+                    Container(
+                      width: double.infinity,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.grey.shade300,
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: ElevatedButton(
+                        onPressed: (_isEmailLoading || _isGoogleLoading)
+                            ? null
+                            : _signUpWithGoogle,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          shadowColor: Colors.transparent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: _isGoogleLoading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.grey,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    width: 24,
+                                    height: 24,
+                                    decoration: const BoxDecoration(
+                                      image: DecorationImage(
+                                        image: NetworkImage(
+                                          'https://developers.google.com/identity/images/g-logo.png',
+                                        ),
+                                        fit: BoxFit.contain,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  const Text(
+                                    'Sign up with Google',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF1A1A2E),
+                                    ),
+                                  ),
+                                ],
                               ),
                       ),
                     ),

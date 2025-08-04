@@ -1,9 +1,17 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter/foundation.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    clientId: kIsWeb
+        ? '975273579439-tv90tipl383kcekt025g730vgv56bjf4.apps.googleusercontent.com'
+        : null,
+    scopes: ['email', 'profile'], // Minimal scopes to avoid People API
+  );
 
   // Get current user
   User? get currentUser => _auth.currentUser;
@@ -34,6 +42,74 @@ class AuthService {
       return result;
     } on FirebaseAuthException catch (e) {
       throw _handleAuthException(e);
+    }
+  }
+
+  // Sign in with Google
+  Future<UserCredential?> signInWithGoogle() async {
+    try {
+      print('Starting Google Sign-In...');
+
+      // Trigger the authentication flow
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+
+      if (googleUser == null) {
+        print('User canceled Google Sign-In');
+        return null;
+      }
+
+      print('Google user obtained: ${googleUser.email}');
+
+      // Obtain the auth details from the request
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      print('Google auth tokens obtained');
+
+      // Create a new credential
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      print('Firebase credential created');
+
+      // Sign in to Firebase with the Google credential
+      UserCredential result = await _auth.signInWithCredential(credential);
+
+      print('Firebase sign-in successful: ${result.user?.email}');
+
+      // Create user document in Firestore if it's a new user
+      if (result.additionalUserInfo?.isNewUser == true) {
+        print('Creating new user document in Firestore...');
+        await _firestore.collection('users').doc(result.user?.uid).set({
+          'name':
+              result.user?.displayName ??
+              googleUser.displayName ??
+              'Google User',
+          'email': result.user?.email ?? googleUser.email,
+          'createdAt': FieldValue.serverTimestamp(),
+          'signInMethod': 'google',
+        });
+        print('User document created successfully');
+      } else {
+        print('Existing user signed in');
+      }
+
+      print('Google Sign-In completed successfully. Returning result...');
+      return result;
+    } on FirebaseAuthException catch (e) {
+      print('Firebase Auth Exception: ${e.code} - ${e.message}');
+      throw _handleAuthException(e);
+    } catch (e) {
+      print('Google sign-in error: $e');
+      // Check if it's a People API error
+      if (e.toString().contains('People API') || e.toString().contains('403')) {
+        throw Exception(
+          'Google Sign-In requires People API to be enabled. Please enable it in Google Cloud Console.',
+        );
+      }
+      throw Exception('Google sign-in failed: $e');
     }
   }
 
@@ -108,6 +184,7 @@ class AuthService {
   // Sign out
   Future<void> signOut() async {
     try {
+      await _googleSignIn.signOut();
       await _auth.signOut();
     } catch (e) {
       throw Exception('Error signing out: $e');
