@@ -90,6 +90,7 @@ class AuthService {
           'email': result.user?.email ?? googleUser.email,
           'createdAt': FieldValue.serverTimestamp(),
           'signInMethod': 'google',
+          'userType': 'user', // Default to user for Google sign-in
         });
         print('User document created successfully');
       } else {
@@ -117,8 +118,12 @@ class AuthService {
   Future<UserCredential?> registerWithEmailAndPassword(
     String email,
     String password,
-    String name,
-  ) async {
+    String name, {
+    bool isDriver = false,
+    String? licenseId,
+    String? carModel,
+    String? phoneNumber,
+  }) async {
     try {
       print('Starting registration for email: $email');
 
@@ -149,14 +154,34 @@ class AuthService {
 
       // Create user document in Firestore
       try {
+        Map<String, dynamic> userData = {
+          'name': name,
+          'email': email,
+          'createdAt': FieldValue.serverTimestamp(),
+          'userType': isDriver ? 'driver' : 'user',
+        };
+
+        // Add phone number if provided
+        if (phoneNumber != null && phoneNumber.isNotEmpty) {
+          userData['phoneNumber'] = phoneNumber;
+        }
+
+        // Add driver-specific fields if it's a driver registration
+        if (isDriver) {
+          if (licenseId != null && licenseId.isNotEmpty) {
+            userData['licenseId'] = licenseId.toUpperCase();
+          }
+          if (carModel != null && carModel.isNotEmpty) {
+            userData['carModel'] = carModel;
+          }
+          userData['isApproved'] = false; // Drivers need approval
+          userData['isActive'] = false; // Initially inactive until approved
+        }
+
         await _firestore
             .collection('users')
             .doc(result.user?.uid)
-            .set({
-              'name': name,
-              'email': email,
-              'createdAt': FieldValue.serverTimestamp(),
-            })
+            .set(userData)
             .timeout(
               const Duration(seconds: 15),
               onTimeout: () {
