@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'services/auth_service.dart';
+import 'services/firestore_service.dart';
 import 'login_page.dart';
 
 class AdminPage extends StatefulWidget {
@@ -15,6 +16,12 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
   late AnimationController _slideController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+
+  // Driver data
+  List<Map<String, dynamic>> _allDrivers = [];
+  List<Map<String, dynamic>> _pendingDrivers = [];
+  List<Map<String, dynamic>> _approvedDrivers = [];
+  bool _isLoadingDrivers = true;
 
   @override
   void initState() {
@@ -40,6 +47,38 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
     // Start animations
     _fadeController.forward();
     _slideController.forward();
+
+    // Load driver data
+    _loadDriverData();
+  }
+
+  Future<void> _loadDriverData() async {
+    try {
+      setState(() {
+        _isLoadingDrivers = true;
+      });
+
+      // Get all drivers from Firestore
+      final allDrivers = await FirestoreService.getAllDrivers();
+      final pendingDrivers = await FirestoreService.getPendingDrivers();
+      final approvedDrivers = await FirestoreService.getApprovedDrivers();
+
+      setState(() {
+        _allDrivers = allDrivers;
+        _pendingDrivers = pendingDrivers;
+        _approvedDrivers = approvedDrivers;
+        _isLoadingDrivers = false;
+      });
+
+      print('📊 Loaded ${allDrivers.length} total drivers');
+      print('⏳ ${pendingDrivers.length} pending drivers');
+      print('✅ ${approvedDrivers.length} approved drivers');
+    } catch (e) {
+      print('❌ Error loading driver data: $e');
+      setState(() {
+        _isLoadingDrivers = false;
+      });
+    }
   }
 
   @override
@@ -521,6 +560,8 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
     return Column(
       children: [
         _buildStatsSection(),
+        const SizedBox(height: 24),
+        _buildDriversSection(),
         const SizedBox(height: 24),
         _buildQuickActionsSection(),
         const SizedBox(height: 24),
@@ -1913,5 +1954,392 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
         );
       },
     );
+  }
+
+  // Build drivers section
+  Widget _buildDriversSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Icon(Icons.local_taxi, color: Colors.blue, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Driver Management',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      Text(
+                        _isLoadingDrivers
+                            ? 'Loading...'
+                            : '${_allDrivers.length} drivers (${_pendingDrivers.length} pending)',
+                        style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: _loadDriverData,
+                  icon: Icon(Icons.refresh, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
+
+          // Driver Stats
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildSimpleStatCard(
+                    'Total',
+                    '${_allDrivers.length}',
+                    Colors.blue,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildSimpleStatCard(
+                    'Pending',
+                    '${_pendingDrivers.length}',
+                    Colors.orange,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildSimpleStatCard(
+                    'Approved',
+                    '${_approvedDrivers.length}',
+                    Colors.green,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Drivers List
+          if (_isLoadingDrivers)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_allDrivers.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.no_accounts, size: 48, color: Colors.grey[400]),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No drivers found',
+                      style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            _buildDriversList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSimpleStatCard(String title, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDriversList() {
+    return Column(
+      children: [
+        // Show pending drivers first
+        if (_pendingDrivers.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              children: [
+                Icon(Icons.pending, color: Colors.orange, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Pending Approval (${_pendingDrivers.length})',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[800],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          ..._pendingDrivers
+              .take(3)
+              .map((driver) => _buildDriverCard(driver, true)),
+        ],
+
+        // Show approved drivers
+        if (_approvedDrivers.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              children: [
+                Icon(Icons.verified, color: Colors.green, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Approved Drivers (${_approvedDrivers.length})',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[800],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          ..._approvedDrivers
+              .take(3)
+              .map((driver) => _buildDriverCard(driver, false)),
+        ],
+
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  Widget _buildDriverCard(Map<String, dynamic> driver, bool isPending) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: isPending ? Colors.orange.shade300 : Colors.green.shade300,
+        ),
+      ),
+      child: Row(
+        children: [
+          // Driver Avatar
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: isPending
+                ? Colors.orange.shade100
+                : Colors.green.shade100,
+            child: Text(
+              (driver['name'] ?? 'N/A')
+                  .toString()
+                  .substring(0, 1)
+                  .toUpperCase(),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isPending
+                    ? Colors.orange.shade700
+                    : Colors.green.shade700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+
+          // Driver Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  driver['name'] ?? 'Unknown Driver',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  driver['email'] ?? 'No email',
+                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.phone, size: 14, color: Colors.grey[500]),
+                    const SizedBox(width: 4),
+                    Text(
+                      driver['phoneNumber'] ?? 'No phone',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    ),
+                    const SizedBox(width: 16),
+                    Icon(Icons.credit_card, size: 14, color: Colors.grey[500]),
+                    const SizedBox(width: 4),
+                    Text(
+                      driver['licenseId'] ?? 'No license',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Status and Actions
+          Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: isPending ? Colors.orange : Colors.green,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  isPending ? 'Pending' : 'Approved',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (isPending) ...[
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      onPressed: () => _approveDriver(driver['id']),
+                      icon: const Icon(
+                        Icons.check,
+                        color: Colors.green,
+                        size: 20,
+                      ),
+                      tooltip: 'Approve',
+                    ),
+                    IconButton(
+                      onPressed: () => _rejectDriver(driver['id']),
+                      icon: const Icon(
+                        Icons.close,
+                        color: Colors.red,
+                        size: 20,
+                      ),
+                      tooltip: 'Reject',
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _approveDriver(String driverId) async {
+    try {
+      await FirestoreService.updateDriverApprovalStatus(
+        userId: driverId,
+        isApproved: true,
+        adminNotes: 'Approved by admin',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Driver approved successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+      // Reload driver data
+      _loadDriverData();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error approving driver: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _rejectDriver(String driverId) async {
+    try {
+      await FirestoreService.updateDriverApprovalStatus(
+        userId: driverId,
+        isApproved: false,
+        adminNotes: 'Rejected by admin',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Driver rejected'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+
+      // Reload driver data
+      _loadDriverData();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error rejecting driver: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

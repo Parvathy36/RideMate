@@ -116,77 +116,51 @@ class AuthWrapper extends StatelessWidget {
         }
 
         if (snapshot.hasData) {
-          // User is logged in, first check if they are a driver
+          // User is logged in, check user type from users collection
           print('🔍 Checking user: ${snapshot.data!.uid}');
           return FutureBuilder<DocumentSnapshot>(
             future: FirebaseFirestore.instance
-                .collection('drivers')
+                .collection('users')
                 .doc(snapshot.data!.uid)
                 .get(),
-            builder: (context, driverSnapshot) {
-              if (driverSnapshot.connectionState == ConnectionState.waiting) {
+            builder: (context, userSnapshot) {
+              if (userSnapshot.connectionState == ConnectionState.waiting) {
                 return const Scaffold(
                   body: Center(child: CircularProgressIndicator()),
                 );
               }
 
-              if (driverSnapshot.hasError) {
+              if (userSnapshot.hasError) {
                 return const Scaffold(
                   body: Center(child: Text('Error loading user data')),
                 );
               }
 
-              // If user exists in drivers collection
-              if (driverSnapshot.hasData && driverSnapshot.data!.exists) {
-                final driverData =
-                    driverSnapshot.data!.data() as Map<String, dynamic>;
-                final isApproved = driverData['isApproved'] ?? false;
+              if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                final userData =
+                    userSnapshot.data!.data() as Map<String, dynamic>;
+                final userType = userData['userType'] ?? 'user';
 
-                print('🚗 Driver found in drivers collection');
-                print('📊 Driver data: $driverData');
-                print('✅ isApproved: $isApproved');
+                print('👤 User found in users collection');
+                print('📊 User data: $userData');
+                print('🏷️ userType: $userType');
 
-                if (isApproved) {
-                  print('➡️ Routing to DriverDashboard');
-                  return const DriverDashboard();
-                } else {
+                if (userType == 'admin') {
+                  print('➡️ Routing to AdminPage');
+                  return const AdminPage();
+                } else if (userType == 'driver') {
                   print('➡️ Routing to DriverWaitingPage');
                   return const DriverWaitingPage();
+                } else {
+                  print('➡️ Routing to HomePage');
+                  return const HomePage();
                 }
               } else {
-                // User not in drivers collection, check users collection
+                // No user data found, default to home page
                 print(
-                  '❌ Driver not found in drivers collection, checking users collection',
+                  '❌ User not found in users collection, defaulting to HomePage',
                 );
-                return FutureBuilder<DocumentSnapshot>(
-                  future: FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(snapshot.data!.uid)
-                      .get(),
-                  builder: (context, userSnapshot) {
-                    if (userSnapshot.connectionState ==
-                        ConnectionState.waiting) {
-                      return const Scaffold(
-                        body: Center(child: CircularProgressIndicator()),
-                      );
-                    }
-
-                    if (userSnapshot.hasData && userSnapshot.data!.exists) {
-                      final userData =
-                          userSnapshot.data!.data() as Map<String, dynamic>;
-                      final userType = userData['userType'] ?? 'user';
-
-                      if (userType == 'admin') {
-                        return const AdminPage();
-                      } else {
-                        return const HomePage();
-                      }
-                    } else {
-                      // No user data found, default to home page
-                      return const HomePage();
-                    }
-                  },
-                );
+                return const HomePage();
               }
             },
           );

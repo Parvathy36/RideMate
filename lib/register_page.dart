@@ -8,6 +8,162 @@ import 'admin.dart';
 import 'debug_page.dart';
 import 'driver_waiting_page.dart';
 
+// Ultra Professional Google Logo Painter - Pixel Perfect & Authentic
+class GoogleLogoCustomPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..isAntiAlias = true
+      ..strokeCap = StrokeCap.round;
+
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width * 0.42; // Perfect proportions
+    final strokeWidth = size.width * 0.15; // Optimal thickness
+    paint.strokeWidth = strokeWidth;
+
+    // Professional shadow layer for depth
+    final shadowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..isAntiAlias = true
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = strokeWidth + 1
+      ..color = Colors.black.withValues(alpha: 0.12);
+
+    // Draw professional shadow
+    canvas.drawArc(
+      Rect.fromCircle(center: center.translate(0.8, 0.8), radius: radius),
+      2.356,
+      6.283,
+      false,
+      shadowPaint,
+    );
+
+    // Google Red Arc (top-left quadrant) - Authentic color
+    paint.color = const Color(0xFFEA4335);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      2.356, // 135°
+      1.571, // 90° sweep
+      false,
+      paint,
+    );
+
+    // Google Yellow Arc (bottom-left quadrant) - Authentic color
+    paint.color = const Color(0xFFFBBC05);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      3.927, // 225°
+      1.571, // 90° sweep
+      false,
+      paint,
+    );
+
+    // Google Green Arc (bottom-right quadrant) - Authentic color
+    paint.color = const Color(0xFF34A853);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      5.498, // 315°
+      1.571, // 90° sweep
+      false,
+      paint,
+    );
+
+    // Google Blue Arc (top-right, with gap for 'G') - Authentic color
+    paint.color = const Color(0xFF4285F4);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      0.785, // 45°
+      1.047, // 60° sweep (leaving perfect gap)
+      false,
+      paint,
+    );
+
+    // Professional 'G' completion - Horizontal bar
+    paint.style = PaintingStyle.fill;
+    final barHeight = strokeWidth * 0.7;
+    final barWidth = radius * 0.6;
+
+    // Create rounded rectangle for horizontal bar
+    final horizontalBar = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        center.dx - strokeWidth * 0.1, // Perfect alignment
+        center.dy - barHeight / 2,
+        barWidth,
+        barHeight,
+      ),
+      Radius.circular(barHeight / 2),
+    );
+
+    // Add subtle gradient shadow to bar
+    final barShadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.08);
+    canvas.drawRRect(
+      horizontalBar.shift(const Offset(0.5, 0.5)),
+      barShadowPaint,
+    );
+
+    // Draw main horizontal bar
+    canvas.drawRRect(horizontalBar, paint);
+
+    // Professional 'G' completion - Vertical bar
+    final verticalBarWidth = strokeWidth * 0.7;
+    final verticalBarHeight = radius * 0.35;
+
+    final verticalBar = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        center.dx + barWidth - verticalBarWidth - strokeWidth * 0.1,
+        center.dy - barHeight / 2,
+        verticalBarWidth,
+        verticalBarHeight,
+      ),
+      Radius.circular(verticalBarWidth / 2),
+    );
+
+    // Add shadow to vertical bar
+    canvas.drawRRect(verticalBar.shift(const Offset(0.5, 0.5)), barShadowPaint);
+
+    // Draw main vertical bar
+    canvas.drawRRect(verticalBar, paint);
+
+    // Premium highlight effect for professional look
+    final highlightPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..isAntiAlias = true
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 1.0
+      ..color = Colors.white.withValues(alpha: 0.4);
+
+    // Add subtle highlight arc
+    canvas.drawArc(
+      Rect.fromCircle(center: center.translate(-0.8, -0.8), radius: radius + 1),
+      2.0,
+      1.2,
+      false,
+      highlightPaint,
+    );
+
+    // Add inner glow for premium effect
+    final glowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..isAntiAlias = true
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 0.5
+      ..color = Colors.white.withValues(alpha: 0.6);
+
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius - strokeWidth / 2 - 1),
+      0,
+      6.283,
+      false,
+      glowPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
 
@@ -414,6 +570,58 @@ class _RegisterPageState extends State<RegisterPage> {
       if (mounted) {
         setState(() {
           _isEmailLoading = false;
+        });
+      }
+    }
+  }
+
+  // Google Sign-In (only for regular users)
+  Future<void> _signInWithGoogle() async {
+    if (_isDriverRegistration) {
+      // This should not happen as button is hidden for drivers
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Google sign-in is only available for regular users'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isGoogleLoading = true;
+    });
+
+    try {
+      print('Google Sign-In button pressed from register page');
+      final result = await _authService.signInWithGoogle();
+
+      if (result != null && mounted) {
+        print('Google sign-in successful, navigating to home page...');
+
+        // For Google sign-in from register page, always navigate to home
+        // The user will be created with userType: 'user' by default
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomePage()),
+        );
+      } else {
+        print('Google sign-in was cancelled or failed');
+      }
+    } catch (e) {
+      print('Google Sign-In error in register page: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Google sign-in failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGoogleLoading = false;
         });
       }
     }
@@ -1147,6 +1355,319 @@ class _RegisterPageState extends State<RegisterPage> {
                               ),
                       ),
                     ),
+
+                    // Google Sign-In (only for regular users)
+                    if (!_isDriverRegistration) ...[
+                      const SizedBox(height: 24),
+
+                      // Info text for Google sign-in
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.deepPurple.shade50,
+                              Colors.deepPurple.shade100.withValues(alpha: 0.3),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.deepPurple.withValues(alpha: 0.2),
+                            width: 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.deepPurple.withValues(alpha: 0.1),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.deepPurple.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(
+                                Icons.flash_on,
+                                color: Colors.deepPurple.shade600,
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Quick sign-up with Google is available for regular users only',
+                                style: TextStyle(
+                                  color: Colors.deepPurple.shade700,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Elegant Divider
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              height: 1,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Colors.transparent,
+                                    Colors.deepPurple.withValues(alpha: 0.3),
+                                    Colors.deepPurple.withValues(alpha: 0.1),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 16),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Colors.deepPurple.withValues(alpha: 0.1),
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              'OR',
+                              style: TextStyle(
+                                color: Colors.deepPurple.shade600,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Container(
+                              height: 1,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Colors.deepPurple.withValues(alpha: 0.1),
+                                    Colors.deepPurple.withValues(alpha: 0.3),
+                                    Colors.transparent,
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // Google Sign-In Button - Visually Appealing
+                      Container(
+                        width: double.infinity,
+                        height: 54,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFFE0E0E0),
+                            width: 1.5,
+                          ),
+                          color: Colors.white,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.08),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                              spreadRadius: 0,
+                            ),
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                              spreadRadius: 0,
+                            ),
+                          ],
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: (_isEmailLoading || _isGoogleLoading)
+                                ? null
+                                : _signInWithGoogle,
+                            borderRadius: BorderRadius.circular(12),
+                            splashColor: const Color(
+                              0xFF4285F4,
+                            ).withValues(alpha: 0.1),
+                            highlightColor: const Color(
+                              0xFF4285F4,
+                            ).withValues(alpha: 0.05),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                              ),
+                              child: Center(
+                                child: _isGoogleLoading
+                                    ? Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                              color: const Color(0xFF5F6368),
+                                              strokeWidth: 2.5,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          const Text(
+                                            'Signing up...',
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w500,
+                                              color: Color(0xFF5F6368),
+                                            ),
+                                          ),
+                                        ],
+                                      )
+                                    : Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          // Custom Google Logo
+                                          Container(
+                                            width: 20,
+                                            height: 20,
+                                            decoration: BoxDecoration(
+                                              borderRadius:
+                                                  BorderRadius.circular(2),
+                                            ),
+                                            child: Image.network(
+                                              'https://developers.google.com/identity/images/g-logo.png',
+                                              width: 20,
+                                              height: 20,
+                                              fit: BoxFit.contain,
+                                              errorBuilder:
+                                                  (context, error, stackTrace) {
+                                                    // Fallback to a simple colored G
+                                                    return Container(
+                                                      width: 20,
+                                                      height: 20,
+                                                      decoration: BoxDecoration(
+                                                        color: const Color(
+                                                          0xFF4285F4,
+                                                        ),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              2,
+                                                            ),
+                                                      ),
+                                                      child: const Center(
+                                                        child: Text(
+                                                          'G',
+                                                          style: TextStyle(
+                                                            color: Colors.white,
+                                                            fontSize: 12,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    );
+                                                  },
+                                            ),
+                                          ),
+                                          const SizedBox(width: 14),
+                                          const Text(
+                                            'Sign up with Google',
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w500,
+                                              color: Color(0xFF3C4043),
+                                              letterSpacing: 0.25,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    // Driver registration note
+                    if (_isDriverRegistration) ...[
+                      const SizedBox(height: 24),
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.amber.shade50,
+                              Colors.amber.shade100.withValues(alpha: 0.3),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.amber.withValues(alpha: 0.3),
+                            width: 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.amber.withValues(alpha: 0.1),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(
+                                Icons.verified_user,
+                                color: Colors.amber.shade700,
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Driver registration requires manual verification with license details',
+                                style: TextStyle(
+                                  color: Colors.amber.shade800,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
 
                     const SizedBox(height: 32),
 

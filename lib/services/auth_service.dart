@@ -31,6 +31,65 @@ class AuthService {
     return user.email?.toLowerCase() == adminEmail.toLowerCase();
   }
 
+  // Get user type from Firestore
+  Future<String?> getUserType() async {
+    try {
+      final user = currentUser;
+      if (user == null) return null;
+
+      print('🔍 Getting user type for: ${user.uid}');
+
+      final userData = await FirestoreService.getUserData(user.uid);
+      if (userData != null) {
+        final userType = userData['userType'] as String?;
+        print('✅ User type found: $userType');
+        return userType;
+      }
+
+      print('❌ User data not found in Firestore');
+      return null;
+    } catch (e) {
+      print('❌ Error getting user type: $e');
+      return null;
+    }
+  }
+
+  // Ensure user document exists in Firestore
+  Future<void> _ensureUserDocumentExists(User user, String email) async {
+    try {
+      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+
+      if (!userDoc.exists) {
+        print('🔄 Creating user document for: ${user.email}');
+
+        // Determine user type
+        String userType = 'user'; // default
+        const adminEmail = 'parvathysuresh36@gmail.com';
+
+        if (email.toLowerCase() == adminEmail.toLowerCase()) {
+          userType = 'admin';
+          print('👑 Creating admin user document');
+        }
+
+        // Create user document
+        await _firestore.collection('users').doc(user.uid).set({
+          'name': user.displayName ?? 'User',
+          'email': email,
+          'userType': userType,
+          'createdAt': FieldValue.serverTimestamp(),
+          'signInMethod': 'email',
+        });
+
+        print('✅ User document created with userType: $userType');
+      } else {
+        print('ℹ️ User document already exists');
+      }
+    } catch (e) {
+      print('❌ Error ensuring user document exists: $e');
+      // Don't throw error as this shouldn't prevent sign-in
+    }
+  }
+
   // Sign in with email and password
   Future<UserCredential?> signInWithEmailAndPassword(
     String email,
@@ -41,6 +100,10 @@ class AuthService {
         email: email,
         password: password,
       );
+
+      // Check if user document exists in Firestore, create if not
+      await _ensureUserDocumentExists(result.user!, email);
+
       return result;
     } on FirebaseAuthException catch (e) {
       throw _handleAuthException(e);
@@ -81,22 +144,13 @@ class AuthService {
 
       print('Firebase sign-in successful: ${result.user?.email}');
 
-      // Create user document in Firestore if it's a new user
+      // Ensure user document exists in Firestore
+      await _ensureUserDocumentExists(result.user!, result.user!.email!);
+
       if (result.additionalUserInfo?.isNewUser == true) {
-        print('Creating new user document in Firestore...');
-        await _firestore.collection('users').doc(result.user?.uid).set({
-          'name':
-              result.user?.displayName ??
-              googleUser.displayName ??
-              'Google User',
-          'email': result.user?.email ?? googleUser.email,
-          'createdAt': FieldValue.serverTimestamp(),
-          'signInMethod': 'google',
-          'userType': 'user', // Default to user for Google sign-in
-        });
-        print('User document created successfully');
+        print('New user signed in with Google');
       } else {
-        print('Existing user signed in');
+        print('Existing user signed in with Google');
       }
 
       print('Google Sign-In completed successfully. Returning result...');

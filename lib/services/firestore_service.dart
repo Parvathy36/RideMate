@@ -461,6 +461,23 @@ class FirestoreService {
     }
   }
 
+  // Get all drivers (both pending and approved)
+  static Future<List<Map<String, dynamic>>> getAllDrivers() async {
+    try {
+      final querySnapshot = await _firestore
+          .collection(driversCollection)
+          .orderBy('registrationDate', descending: true)
+          .get();
+
+      return querySnapshot.docs
+          .map((doc) => {'id': doc.id, ...doc.data()})
+          .toList();
+    } catch (e) {
+      print('❌ Error getting all drivers: $e');
+      return [];
+    }
+  }
+
   // Get driver by ID
   static Future<Map<String, dynamic>?> getDriverById(String userId) async {
     try {
@@ -493,6 +510,30 @@ class FirestoreService {
       return null;
     } catch (e) {
       print('❌ Error getting driver data: $e');
+      return null;
+    }
+  }
+
+  // Get user data by user ID from users collection
+  static Future<Map<String, dynamic>?> getUserData(String userId) async {
+    try {
+      print('🔍 Getting user data for: $userId');
+
+      final docSnapshot = await _firestore
+          .collection(usersCollection)
+          .doc(userId)
+          .get();
+
+      if (docSnapshot.exists) {
+        final userData = docSnapshot.data()!;
+        print('✅ User data found: ${userData['userType']}');
+        return {'id': docSnapshot.id, ...userData};
+      }
+
+      print('❌ User data not found');
+      return null;
+    } catch (e) {
+      print('❌ Error getting user data: $e');
       return null;
     }
   }
@@ -577,6 +618,45 @@ class FirestoreService {
     }
   }
 
+  // Initialize admin user if not exists
+  static Future<void> initializeAdminUser() async {
+    try {
+      print('🔄 Checking for admin user...');
+
+      const adminEmail = 'parvathysuresh36@gmail.com';
+
+      // Check if admin user already exists in users collection
+      final adminQuery = await _firestore
+          .collection(usersCollection)
+          .where('email', isEqualTo: adminEmail)
+          .where('userType', isEqualTo: 'admin')
+          .limit(1)
+          .get();
+
+      if (adminQuery.docs.isEmpty) {
+        print('🔄 Creating admin user document...');
+
+        // Create admin user document (this will be used when admin signs in)
+        // Note: The actual Firebase Auth user will be created when admin signs in
+        final adminDoc = _firestore.collection(usersCollection).doc();
+        await adminDoc.set({
+          'name': 'Admin',
+          'email': adminEmail,
+          'userType': 'admin',
+          'createdAt': FieldValue.serverTimestamp(),
+          'isActive': true,
+        });
+
+        print('✅ Admin user document created');
+      } else {
+        print('ℹ️ Admin user already exists');
+      }
+    } catch (e) {
+      print('❌ Error initializing admin user: $e');
+      // Don't throw error as this is not critical for app functionality
+    }
+  }
+
   // Initialize all required collections and data
   static Future<void> initializeFirestore() async {
     try {
@@ -590,6 +670,9 @@ class FirestoreService {
 
       // Initialize license data
       await initializeLicenseData();
+
+      // Initialize admin user
+      await initializeAdminUser();
 
       print('✅ Firestore initialization completed');
     } catch (e) {

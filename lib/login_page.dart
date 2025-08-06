@@ -3,6 +3,7 @@ import 'register_page.dart';
 import 'services/auth_service.dart';
 import 'home.dart';
 import 'admin.dart';
+import 'driver_waiting_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -27,6 +28,52 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
+  // Navigate user based on their userType from Firestore
+  Future<void> _navigateBasedOnUserType() async {
+    try {
+      print('🔍 Checking user type for navigation...');
+
+      final userType = await _authService.getUserType();
+      print('📍 User type: $userType');
+
+      if (!mounted) return;
+
+      switch (userType) {
+        case 'admin':
+          print('🔄 Navigating to Admin page...');
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const AdminPage()),
+          );
+          break;
+        case 'driver':
+          print('🔄 Navigating to Driver waiting page...');
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const DriverWaitingPage()),
+          );
+          break;
+        case 'user':
+        default:
+          print('🔄 Navigating to Home page...');
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const HomePage()),
+          );
+          break;
+      }
+    } catch (e) {
+      print('❌ Error during navigation: $e');
+      // Default to home page if there's an error
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomePage()),
+        );
+      }
+    }
+  }
+
   Future<void> _signIn() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -41,18 +88,8 @@ class _LoginPageState extends State<LoginPage> {
       );
 
       if (mounted) {
-        // Check if user is admin and redirect accordingly
-        if (_authService.isAdmin()) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const AdminPage()),
-          );
-        } else {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const HomePage()),
-          );
-        }
+        // Navigate based on user type from Firestore
+        await _navigateBasedOnUserType();
       }
     } catch (e) {
       if (mounted) {
@@ -81,29 +118,15 @@ class _LoginPageState extends State<LoginPage> {
       print('AuthService.signInWithGoogle() returned: $result');
 
       if (result != null && mounted) {
-        print('Sign-in successful, checking admin status...');
-        final isAdmin = _authService.isAdmin();
-        print('Is admin: $isAdmin');
+        print('Sign-in successful, navigating based on user type...');
 
         // Reset loading state before navigation
         setState(() {
           _isGoogleLoading = false;
         });
 
-        // Check if user is admin and redirect accordingly
-        if (isAdmin) {
-          print('Navigating to AdminPage...');
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const AdminPage()),
-          );
-        } else {
-          print('Navigating to HomePage...');
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const HomePage()),
-          );
-        }
+        // Navigate based on user type from Firestore
+        await _navigateBasedOnUserType();
         print('Navigation completed');
       } else {
         print('Sign-in result was null (user cancelled) or widget not mounted');
@@ -511,71 +534,135 @@ class _LoginPageState extends State<LoginPage> {
 
                     const SizedBox(height: 24),
 
-                    // Google Sign-In Button
+                    // Google Sign-In Button - Visually Appealing
                     Container(
                       width: double.infinity,
-                      height: 56,
+                      height: 54,
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Colors.grey.shade300,
-                          width: 1,
+                          color: const Color(0xFFE0E0E0),
+                          width: 1.5,
                         ),
+                        color: Colors.white,
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
-                            blurRadius: 8,
+                            color: Colors.black.withValues(alpha: 0.08),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                            spreadRadius: 0,
+                          ),
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 6,
                             offset: const Offset(0, 2),
+                            spreadRadius: 0,
                           ),
                         ],
                       ),
-                      child: ElevatedButton(
-                        onPressed: (_isEmailLoading || _isGoogleLoading)
-                            ? null
-                            : _signInWithGoogle,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          shadowColor: Colors.transparent,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: (_isEmailLoading || _isGoogleLoading)
+                              ? null
+                              : _signInWithGoogle,
+                          borderRadius: BorderRadius.circular(12),
+                          splashColor: const Color(
+                            0xFF4285F4,
+                          ).withValues(alpha: 0.1),
+                          highlightColor: const Color(
+                            0xFF4285F4,
+                          ).withValues(alpha: 0.05),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: Center(
+                              child: _isGoogleLoading
+                                  ? Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            color: const Color(0xFF5F6368),
+                                            strokeWidth: 2.5,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        const Text(
+                                          'Signing in...',
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w500,
+                                            color: Color(0xFF5F6368),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        // Custom Google Logo
+                                        Container(
+                                          width: 20,
+                                          height: 20,
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(
+                                              2,
+                                            ),
+                                          ),
+                                          child: Image.network(
+                                            'https://developers.google.com/identity/images/g-logo.png',
+                                            width: 20,
+                                            height: 20,
+                                            fit: BoxFit.contain,
+                                            errorBuilder:
+                                                (context, error, stackTrace) {
+                                                  // Fallback to a simple colored G
+                                                  return Container(
+                                                    width: 20,
+                                                    height: 20,
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(
+                                                        0xFF4285F4,
+                                                      ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            2,
+                                                          ),
+                                                    ),
+                                                    child: const Center(
+                                                      child: Text(
+                                                        'G',
+                                                        style: TextStyle(
+                                                          color: Colors.white,
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                          ),
+                                        ),
+                                        const SizedBox(width: 14),
+                                        const Text(
+                                          'Continue with Google',
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w500,
+                                            color: Color(0xFF3C4043),
+                                            letterSpacing: 0.25,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            ),
                           ),
                         ),
-                        child: _isGoogleLoading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  color: Colors.grey,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Container(
-                                    width: 24,
-                                    height: 24,
-                                    decoration: const BoxDecoration(
-                                      image: DecorationImage(
-                                        image: NetworkImage(
-                                          'https://developers.google.com/identity/images/g-logo.png',
-                                        ),
-                                        fit: BoxFit.contain,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  const Text(
-                                    'Continue with Google',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF1A1A2E),
-                                    ),
-                                  ),
-                                ],
-                              ),
                       ),
                     ),
 
