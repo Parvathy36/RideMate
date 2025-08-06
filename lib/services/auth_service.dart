@@ -2,6 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/foundation.dart';
+import 'firestore_service.dart';
+import 'license_validation_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -122,6 +124,7 @@ class AuthService {
     bool isDriver = false,
     String? licenseId,
     String? carModel,
+    String? carNumber,
     String? phoneNumber,
   }) async {
     try {
@@ -154,46 +157,84 @@ class AuthService {
 
       // Create user document in Firestore
       try {
-        Map<String, dynamic> userData = {
-          'name': name,
-          'email': email,
-          'createdAt': FieldValue.serverTimestamp(),
-          'userType': isDriver ? 'driver' : 'user',
-        };
-
-        // Add phone number if provided
-        if (phoneNumber != null && phoneNumber.isNotEmpty) {
-          userData['phoneNumber'] = phoneNumber;
-        }
-
-        // Add driver-specific fields if it's a driver registration
         if (isDriver) {
-          if (licenseId != null && licenseId.isNotEmpty) {
-            userData['licenseId'] = licenseId.toUpperCase();
+          // For driver registration, validate license and create comprehensive driver document
+          if (licenseId == null || licenseId.isEmpty) {
+            throw Exception('License ID is required for driver registration');
           }
-          if (carModel != null && carModel.isNotEmpty) {
-            userData['carModel'] = carModel;
+          if (carModel == null || carModel.isEmpty) {
+            throw Exception('Car model is required for driver registration');
           }
-          userData['isApproved'] = false; // Drivers need approval
-          userData['isActive'] = false; // Initially inactive until approved
-        }
+          if (phoneNumber == null || phoneNumber.isEmpty) {
+            throw Exception('Phone number is required for driver registration');
+          }
 
-        await _firestore
-            .collection('users')
-            .doc(result.user?.uid)
-            .set(userData)
-            .timeout(
-              const Duration(seconds: 15),
-              onTimeout: () {
-                print(
-                  'Firestore document creation timed out, but user is created',
-                );
-              },
+          // Validate license in database
+          final licenseData = await LicenseValidationService.validateLicense(
+            licenseId,
+          );
+          if (licenseData == null) {
+            throw Exception(
+              'Invalid or expired license ID. Please check and try again.',
             );
-        print('User document created in Firestore');
+          }
+
+          // Check if license is already registered by another driver
+          final isLicenseRegistered =
+              await FirestoreService.isLicenseAlreadyRegistered(licenseId);
+          if (isLicenseRegistered) {
+            throw Exception(
+              'This license ID is already registered with another driver account.',
+            );
+          }
+
+          // Create comprehensive driver document
+          await FirestoreService.createDriverDocument(
+            userId: result.user!.uid,
+            name: name,
+            email: email,
+            phoneNumber: phoneNumber,
+            licenseId: licenseId,
+            carModel: carModel,
+            carNumber: carNumber ?? '', // Default empty if not provided
+            licenseData: licenseData,
+          );
+          print('Driver document created in Firestore');
+        } else {
+          // For regular user registration, create simple user document
+          Map<String, dynamic> userData = {
+            'name': name,
+            'email': email,
+            'createdAt': FieldValue.serverTimestamp(),
+            'userType': 'user',
+          };
+
+          // Add phone number if provided
+          if (phoneNumber != null && phoneNumber.isNotEmpty) {
+            userData['phoneNumber'] = phoneNumber;
+          }
+
+          await _firestore
+              .collection('users')
+              .doc(result.user?.uid)
+              .set(userData)
+              .timeout(
+                const Duration(seconds: 15),
+                onTimeout: () {
+                  print(
+                    'Firestore document creation timed out, but user is created',
+                  );
+                },
+              );
+          print('User document created in Firestore');
+        }
       } catch (firestoreError) {
-        print('Firestore error (non-critical): $firestoreError');
-        // Don't throw here as the user account is already created
+        print('Firestore error: $firestoreError');
+        // For driver registration, this is critical - throw the error
+        if (isDriver) {
+          throw Exception('Driver registration failed: $firestoreError');
+        }
+        // For regular users, it's non-critical
       }
 
       return result;

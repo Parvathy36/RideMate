@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'login_page.dart';
 import 'register_page.dart';
@@ -8,9 +10,13 @@ import 'about_page.dart';
 import 'service_page.dart';
 import 'contact_page.dart';
 import 'services/auth_service.dart';
+import 'services/firestore_service.dart';
 import 'home.dart';
 import 'admin.dart';
 import 'firebase_test.dart';
+import 'driver_waiting_page.dart';
+import 'driver_dashboard.dart';
+import 'debug_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +29,9 @@ void main() async {
 
     // Run Firebase connection test
     await FirebaseTest.testFirebaseConnection();
+
+    // Initialize Firestore with license data
+    await FirestoreService.initializeFirestore();
 
     // Test Email/Password authentication (uncomment after enabling in Firebase Console)
     // await FirebaseTest.testEmailPasswordAuth();
@@ -107,12 +116,80 @@ class AuthWrapper extends StatelessWidget {
         }
 
         if (snapshot.hasData) {
-          // User is logged in, check if admin and redirect accordingly
-          if (authService.isAdmin()) {
-            return const AdminPage();
-          } else {
-            return const HomePage();
-          }
+          // User is logged in, first check if they are a driver
+          print('🔍 Checking user: ${snapshot.data!.uid}');
+          return FutureBuilder<DocumentSnapshot>(
+            future: FirebaseFirestore.instance
+                .collection('drivers')
+                .doc(snapshot.data!.uid)
+                .get(),
+            builder: (context, driverSnapshot) {
+              if (driverSnapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+
+              if (driverSnapshot.hasError) {
+                return const Scaffold(
+                  body: Center(child: Text('Error loading user data')),
+                );
+              }
+
+              // If user exists in drivers collection
+              if (driverSnapshot.hasData && driverSnapshot.data!.exists) {
+                final driverData =
+                    driverSnapshot.data!.data() as Map<String, dynamic>;
+                final isApproved = driverData['isApproved'] ?? false;
+
+                print('🚗 Driver found in drivers collection');
+                print('📊 Driver data: $driverData');
+                print('✅ isApproved: $isApproved');
+
+                if (isApproved) {
+                  print('➡️ Routing to DriverDashboard');
+                  return const DriverDashboard();
+                } else {
+                  print('➡️ Routing to DriverWaitingPage');
+                  return const DriverWaitingPage();
+                }
+              } else {
+                // User not in drivers collection, check users collection
+                print(
+                  '❌ Driver not found in drivers collection, checking users collection',
+                );
+                return FutureBuilder<DocumentSnapshot>(
+                  future: FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(snapshot.data!.uid)
+                      .get(),
+                  builder: (context, userSnapshot) {
+                    if (userSnapshot.connectionState ==
+                        ConnectionState.waiting) {
+                      return const Scaffold(
+                        body: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+
+                    if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                      final userData =
+                          userSnapshot.data!.data() as Map<String, dynamic>;
+                      final userType = userData['userType'] ?? 'user';
+
+                      if (userType == 'admin') {
+                        return const AdminPage();
+                      } else {
+                        return const HomePage();
+                      }
+                    } else {
+                      // No user data found, default to home page
+                      return const HomePage();
+                    }
+                  },
+                );
+              }
+            },
+          );
         } else {
           // User is not logged in, show landing page
           return const LandingPage();
@@ -1105,6 +1182,21 @@ class _LandingPageState extends State<LandingPage>
           ),
         ),
       ),
+      // Debug button (only in debug mode)
+      if (kDebugMode)
+        Container(
+          margin: EdgeInsets.only(right: finalMargin),
+          child: IconButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const DebugPage()),
+              );
+            },
+            icon: const Icon(Icons.storage, color: Colors.white70, size: 20),
+            tooltip: 'Firestore Test',
+          ),
+        ),
     ];
   }
 }

@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'login_page.dart';
 import 'services/auth_service.dart';
+import 'services/license_validation_service.dart';
 import 'home.dart';
 import 'admin.dart';
 import 'debug_page.dart';
+import 'driver_waiting_page.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -22,7 +24,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final _confirmPasswordController = TextEditingController();
   // Driver-specific controllers
   final _licenseIdController = TextEditingController();
-  final _carModelController = TextEditingController();
+  final _carNumberController = TextEditingController();
   final AuthService _authService = AuthService();
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
@@ -31,6 +33,9 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _isGoogleLoading = false;
   bool _isDriverRegistration =
       false; // Toggle between user and driver registration
+  bool _isValidatingLicense = false;
+  String? _licenseHolderName;
+  String? _selectedCarModel;
 
   // Car models list
   final List<String> _carModels = [
@@ -52,48 +57,45 @@ class _RegisterPageState extends State<RegisterPage> {
     'Mahindra Bolero',
     'Honda City',
     'Honda Amaze',
-    'Honda Jazz',
-    'Toyota Innova Crysta',
+    'Toyota Innova',
     'Toyota Fortuner',
-    'Toyota Glanza',
     'Kia Seltos',
     'Kia Sonet',
-    'Skoda Rapid',
-    'Volkswagen Polo',
-    'Renault Kwid',
     'Nissan Magnite',
+    'Renault Kwid',
+    'Ford EcoSport',
+    'Volkswagen Polo',
+    'Skoda Rapid',
     'MG Hector',
+    'Jeep Compass',
     'Other',
   ];
-  String? _selectedCarModel;
 
   @override
-  void initState() {
-    super.initState();
-    _nameController.addListener(_validateForm);
-    _emailController.addListener(_validateForm);
-    _phoneController.addListener(_validateForm);
-    _passwordController.addListener(_validateForm);
-    _confirmPasswordController.addListener(_validateForm);
-    _licenseIdController.addListener(_validateForm);
-    _carModelController.addListener(_validateForm);
-  }
-
-  void _validateForm() {
-    if (_autoValidate) {
-      _formKey.currentState?.validate();
-    }
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    _licenseIdController.dispose();
+    _carNumberController.dispose();
+    super.dispose();
   }
 
   String? _validateName(String? value) {
     if (value == null || value.isEmpty) {
-      return 'Please enter your full name';
+      return 'Please enter your name';
     }
-    if (value.length < 2) {
-      return 'Name must be at least 2 characters';
+
+    // Check minimum length
+    if (value.trim().length < 2) {
+      return 'Name must be at least 2 characters long';
     }
-    if (value.length > 20) {
-      return 'Name must not exceed 20 characters';
+
+    // Check maximum length
+    if (value.trim().length > 50) {
+      return 'Name must be less than 50 characters';
     }
 
     // Check if first letter is capitalized
@@ -147,9 +149,8 @@ class _RegisterPageState extends State<RegisterPage> {
       return 'Phone number must contain only digits';
     }
 
-    // Check if first digit is 6, 7, 8, or 9
-    String firstDigit = phoneNumber[0];
-    if (!['6', '7', '8', '9'].contains(firstDigit)) {
+    // Check if phone number starts with valid digits (6-9)
+    if (!RegExp(r'^[6-9]').hasMatch(phoneNumber)) {
       return 'Phone number must start with 6, 7, 8, or 9';
     }
 
@@ -160,11 +161,8 @@ class _RegisterPageState extends State<RegisterPage> {
     if (value == null || value.isEmpty) {
       return 'Please enter a password';
     }
-    if (value.length < 8) {
-      return 'Password must be at least 8 characters';
-    }
-    if (!RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)').hasMatch(value)) {
-      return 'Password must contain uppercase, lowercase and number';
+    if (value.length < 6) {
+      return 'Password must be at least 6 characters long';
     }
     return null;
   }
@@ -180,157 +178,235 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   String? _validateLicenseId(String? value) {
+    if (!_isDriverRegistration) return null;
+
     if (value == null || value.isEmpty) {
-      return 'Please enter your driving license ID';
+      return 'Please enter your license ID';
     }
 
-    // Remove spaces and convert to uppercase for validation
-    String cleanedValue = value.replaceAll(' ', '').toUpperCase();
-
-    // Indian Driving License Format: SS-YYNNNNNNNNN
-    // SS = State code (2 letters), YY = Year (2 digits), NNNNNNNNN = Unique number (9 digits)
-    RegExp licenseRegex = RegExp(r'^[A-Z]{2}-\d{11}$');
-
-    if (!licenseRegex.hasMatch(cleanedValue)) {
-      return 'Invalid license format. Use: SS-YYNNNNNNNNN (e.g., KL-2012345678901)';
-    }
-
-    // Validate state codes (common Indian state codes)
-    List<String> validStateCodes = [
-      'AP',
-      'AR',
-      'AS',
-      'BR',
-      'CG',
-      'GA',
-      'GJ',
-      'HR',
-      'HP',
-      'JH',
-      'KA',
-      'KL',
-      'MP',
-      'MH',
-      'MN',
-      'ML',
-      'MZ',
-      'NL',
-      'OR',
-      'PB',
-      'RJ',
-      'SK',
-      'TN',
-      'TG',
-      'TR',
-      'UP',
-      'UK',
-      'WB',
-      'AN',
-      'CH',
-      'DN',
-      'DD',
-      'DL',
-      'JK',
-      'LA',
-      'LD',
-      'PY',
-    ];
-
-    String stateCode = cleanedValue.substring(0, 2);
-    if (!validStateCodes.contains(stateCode)) {
-      return 'Invalid state code. Please use a valid Indian state code';
+    // Check format
+    if (!LicenseValidationService.isValidLicenseFormat(value)) {
+      return 'Invalid license format. Use Kerala format: KLDD YYYYNNNNNNN (e.g., KL01 20230000001)';
     }
 
     return null;
   }
 
   String? _validateCarModel(String? value) {
-    if (_isDriverRegistration && (value == null || value.isEmpty)) {
+    if (!_isDriverRegistration) return null;
+
+    if (value == null || value.isEmpty) {
       return 'Please select your car model';
     }
     return null;
   }
 
-  Future<void> _submitForm() async {
+  String? _validateCarNumber(String? value) {
+    if (!_isDriverRegistration) return null;
+
+    if (value == null || value.isEmpty) {
+      return 'Please enter your car registration number';
+    }
+
+    // Check format using the service
+    if (!LicenseValidationService.isValidCarNumberFormat(value)) {
+      return 'Invalid car number format. Use Kerala format: KLDD XX NNNN (e.g., KL01 AB 1234)';
+    }
+
+    return null;
+  }
+
+  Future<void> _validateLicenseInDatabase() async {
+    if (!_isDriverRegistration || _licenseIdController.text.isEmpty) return;
+
     setState(() {
-      _autoValidate = true;
+      _isValidatingLicense = true;
+      _licenseHolderName = null;
     });
 
-    if (!_formKey.currentState!.validate()) return;
+    try {
+      final validationResult =
+          await LicenseValidationService.validateLicenseDetailed(
+            _licenseIdController.text.trim(),
+          );
+
+      setState(() {
+        _isValidatingLicense = false;
+        if (validationResult['isValid'] == true) {
+          final licenseData =
+              validationResult['licenseData'] as Map<String, dynamic>;
+          _licenseHolderName = licenseData['name'];
+        } else {
+          _licenseHolderName = null;
+        }
+      });
+
+      if (validationResult['isValid'] == true) {
+        final licenseData =
+            validationResult['licenseData'] as Map<String, dynamic>;
+        final daysUntilExpiry = validationResult['daysUntilExpiry'];
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'License verified for ${licenseData['name']} (expires in $daysUntilExpiry days)',
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        final status = validationResult['status'];
+        final message = validationResult['message'];
+        String errorMessage = message;
+
+        // Provide specific error messages based on status
+        if (status == 'expired') {
+          final daysExpired = validationResult['daysExpired'];
+          errorMessage =
+              'License expired $daysExpired days ago. Please renew your license.';
+        } else if (status == 'inactive') {
+          errorMessage = 'License is not active. Please contact RTO.';
+        } else if (status == 'not_found') {
+          errorMessage = 'License ID not found in database.';
+        } else if (status == 'invalid_format') {
+          errorMessage =
+              'Invalid license format. Use Kerala format: KLDD YYYYNNNNNNN';
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(errorMessage),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() {
+        _isValidatingLicense = false;
+        _licenseHolderName = null;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error validating license: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _registerWithEmail() async {
+    if (!_formKey.currentState!.validate()) {
+      setState(() {
+        _autoValidate = true;
+      });
+      return;
+    }
+
+    // For driver registration, validate license in database
+    if (_isDriverRegistration) {
+      if (_licenseHolderName == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please validate your license ID first'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Check if car number is already registered
+      if (_carNumberController.text.trim().isNotEmpty) {
+        try {
+          final isCarRegistered =
+              await LicenseValidationService.isCarNumberAlreadyRegistered(
+                _carNumberController.text.trim(),
+              );
+          if (isCarRegistered) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'This car number is already registered with another driver',
+                  ),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+            return;
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error checking car number: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+      }
+    }
 
     setState(() {
       _isEmailLoading = true;
     });
 
     try {
-      print('Starting registration process...');
-      print('Email: ${_emailController.text.trim()}');
-      print('Name: ${_nameController.text.trim()}');
-
-      final result = await _authService.registerWithEmailAndPassword(
+      final user = await _authService.registerWithEmailAndPassword(
         _emailController.text.trim(),
         _passwordController.text,
         _nameController.text.trim(),
         isDriver: _isDriverRegistration,
+        phoneNumber: _phoneController.text.trim(),
         licenseId: _isDriverRegistration
             ? _licenseIdController.text.trim()
             : null,
-        carModel: _isDriverRegistration
-            ? (_selectedCarModel == 'Other'
-                  ? _carModelController.text.trim()
-                  : _selectedCarModel)
+        carModel: _isDriverRegistration ? _selectedCarModel : null,
+        carNumber: _isDriverRegistration
+            ? _carNumberController.text.trim()
             : null,
-        phoneNumber: _phoneController.text.trim(),
       );
 
-      print('Registration result: $result');
-
-      if (mounted) {
+      if (user != null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               _isDriverRegistration
-                  ? 'Driver registration successful! Awaiting approval.'
-                  : 'Account created successfully!',
+                  ? 'Driver registration successful! Please wait for admin approval.'
+                  : 'Registration successful!',
             ),
             backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
           ),
         );
 
-        print('Showing success message and navigating...');
-
-        // Wait longer for the user to see the success message
-        await Future.delayed(const Duration(milliseconds: 2500));
-
-        // Navigate to appropriate page after successful registration
-        if (mounted) {
-          // Check if user is admin and redirect accordingly
-          if (_authService.isAdmin()) {
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (context) => const AdminPage()),
-              (route) => false, // Remove all previous routes
-            );
-            print('Navigation to AdminPage completed');
-          } else {
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (context) => const HomePage()),
-              (route) => false, // Remove all previous routes
-            );
-            print('Navigation to HomePage completed');
-          }
+        // Navigate based on user type
+        if (_isDriverRegistration) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const DriverWaitingPage()),
+          );
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const HomePage()),
+          );
         }
       }
     } catch (e) {
-      print('Registration error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Registration failed: ${e.toString()}'),
+            content: Text('Registration failed: $e'),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -339,106 +415,8 @@ class _RegisterPageState extends State<RegisterPage> {
         setState(() {
           _isEmailLoading = false;
         });
-        print('Loading state set to false');
       }
     }
-  }
-
-  Future<void> _signUpWithGoogle() async {
-    print('Google Sign-Up button pressed');
-    setState(() {
-      _isGoogleLoading = true;
-    });
-
-    try {
-      print('Calling AuthService.signInWithGoogle() for registration...');
-      final result = await _authService.signInWithGoogle();
-      print('AuthService.signInWithGoogle() returned: $result');
-
-      if (result != null && mounted) {
-        print('Google sign-up successful, showing success message...');
-
-        // Show success message and wait for it to be visible
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Account created successfully with Google!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-
-        print('Success message shown, waiting before navigation...');
-
-        // Wait longer for the user to see the success message
-        await Future.delayed(const Duration(milliseconds: 2500));
-
-        // Navigate to appropriate page after successful registration
-        if (mounted) {
-          print('Checking admin status for navigation...');
-          final isAdmin = _authService.isAdmin();
-          print('Is admin: $isAdmin');
-
-          // Reset loading state just before navigation
-          setState(() {
-            _isGoogleLoading = false;
-          });
-
-          // Check if user is admin and redirect accordingly
-          if (isAdmin) {
-            print('Navigating to AdminPage...');
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (context) => const AdminPage()),
-              (route) => false, // Remove all previous routes
-            );
-          } else {
-            print('Navigating to HomePage...');
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (context) => const HomePage()),
-              (route) => false, // Remove all previous routes
-            );
-          }
-          print('Navigation completed');
-        }
-      } else {
-        print(
-          'Google sign-up result was null (user cancelled) or widget not mounted',
-        );
-        // Reset loading state when user cancels
-        if (mounted) {
-          setState(() {
-            _isGoogleLoading = false;
-          });
-        }
-      }
-    } catch (e) {
-      print('Google sign-up error in register page: $e');
-      if (mounted) {
-        setState(() {
-          _isGoogleLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Google sign-up failed: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
-    _phoneController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
-    _licenseIdController.dispose();
-    _carModelController.dispose();
-    super.dispose();
   }
 
   @override
@@ -448,7 +426,7 @@ class _RegisterPageState extends State<RegisterPage> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Sign Up'),
+        title: const Text('Create Account'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -459,7 +437,7 @@ class _RegisterPageState extends State<RegisterPage> {
           children: [
             // Modern Header Section
             Container(
-              height: size.height * 0.4,
+              height: size.height * 0.35,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
@@ -493,7 +471,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   ),
                   Positioned(
                     left: -40,
-                    top: 120,
+                    top: 150,
                     child: Container(
                       width: 100,
                       height: 100,
@@ -535,11 +513,9 @@ class _RegisterPageState extends State<RegisterPage> {
                           ),
                         ),
                         const SizedBox(height: 24),
-                        Text(
-                          _isDriverRegistration
-                              ? 'Drive with RideMate'
-                              : 'Join RideMate',
-                          style: const TextStyle(
+                        const Text(
+                          'Join RideMate',
+                          style: TextStyle(
                             fontSize: 36,
                             fontWeight: FontWeight.w800,
                             color: Colors.white,
@@ -547,11 +523,9 @@ class _RegisterPageState extends State<RegisterPage> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Text(
-                          _isDriverRegistration
-                              ? 'Start earning by becoming a driver'
-                              : 'Create your account to get started',
-                          style: const TextStyle(
+                        const Text(
+                          'Create your account to get started',
+                          style: TextStyle(
                             fontSize: 16,
                             color: Colors.white70,
                             fontWeight: FontWeight.w400,
@@ -564,7 +538,7 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
             ),
 
-            // Modern Register Form
+            // Modern Registration Form
             Container(
               padding: const EdgeInsets.all(24),
               child: Form(
@@ -575,36 +549,13 @@ class _RegisterPageState extends State<RegisterPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 8),
-                    Text(
-                      _isDriverRegistration
-                          ? 'Register as Driver'
-                          : 'Create your account',
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1A1A2E),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _isDriverRegistration
-                          ? 'Fill in your driver details to get started'
-                          : 'Fill in your details to get started',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 32),
 
                     // Registration Type Toggle
                     Container(
-                      padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
                         color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(16),
                         border: Border.all(
                           color: Colors.grey.shade200,
                           width: 1,
@@ -617,17 +568,32 @@ class _RegisterPageState extends State<RegisterPage> {
                               onTap: () {
                                 setState(() {
                                   _isDriverRegistration = false;
+                                  _licenseHolderName = null;
+                                  _licenseIdController.clear();
+                                  _carNumberController.clear();
+                                  _selectedCarModel = null;
                                 });
                               },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
+                                  vertical: 16,
                                 ),
                                 decoration: BoxDecoration(
                                   color: !_isDriverRegistration
                                       ? Colors.deepPurple
                                       : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: !_isDriverRegistration
+                                      ? [
+                                          BoxShadow(
+                                            color: Colors.deepPurple.withValues(
+                                              alpha: 0.3,
+                                            ),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ]
+                                      : null,
                                 ),
                                 child: Text(
                                   'User',
@@ -635,9 +601,9 @@ class _RegisterPageState extends State<RegisterPage> {
                                   style: TextStyle(
                                     color: !_isDriverRegistration
                                         ? Colors.white
-                                        : Colors.grey.shade600,
+                                        : const Color(0xFF1A1A2E),
                                     fontWeight: FontWeight.w600,
-                                    fontSize: 14,
+                                    fontSize: 16,
                                   ),
                                 ),
                               ),
@@ -652,13 +618,24 @@ class _RegisterPageState extends State<RegisterPage> {
                               },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
+                                  vertical: 16,
                                 ),
                                 decoration: BoxDecoration(
                                   color: _isDriverRegistration
                                       ? Colors.deepPurple
                                       : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: _isDriverRegistration
+                                      ? [
+                                          BoxShadow(
+                                            color: Colors.deepPurple.withValues(
+                                              alpha: 0.3,
+                                            ),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ]
+                                      : null,
                                 ),
                                 child: Text(
                                   'Driver',
@@ -666,9 +643,9 @@ class _RegisterPageState extends State<RegisterPage> {
                                   style: TextStyle(
                                     color: _isDriverRegistration
                                         ? Colors.white
-                                        : Colors.grey.shade600,
+                                        : const Color(0xFF1A1A2E),
                                     fontWeight: FontWeight.w600,
-                                    fontSize: 14,
+                                    fontSize: 16,
                                   ),
                                 ),
                               ),
@@ -677,12 +654,35 @@ class _RegisterPageState extends State<RegisterPage> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
 
-                    // Name Field (Dynamic label)
+                    const SizedBox(height: 32),
+
+                    // Form Title
                     Text(
-                      _isDriverRegistration ? 'Driver Name' : 'Full Name',
+                      _isDriverRegistration
+                          ? 'Create Driver Account'
+                          : 'Create User Account',
                       style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1A1A2E),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Fill in your details to get started',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Name Field
+                    const Text(
+                      'Full Name',
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF1A1A2E),
@@ -778,7 +778,7 @@ class _RegisterPageState extends State<RegisterPage> {
                         validator: _validatePhone,
                         keyboardType: TextInputType.phone,
                         decoration: InputDecoration(
-                          hintText: 'Enter your phone number',
+                          hintText: '+91XXXXXXXXXX',
                           hintStyle: TextStyle(color: Colors.grey.shade500),
                           prefixIcon: Icon(
                             Icons.phone_outlined,
@@ -791,146 +791,6 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
                     ),
                     const SizedBox(height: 20),
-
-                    // Driver-specific fields
-                    if (_isDriverRegistration) ...[
-                      // License ID Field
-                      const Text(
-                        'Driving License ID',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A1A2E),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: Colors.grey.shade200,
-                            width: 1,
-                          ),
-                        ),
-                        child: TextFormField(
-                          controller: _licenseIdController,
-                          validator: _validateLicenseId,
-                          textCapitalization: TextCapitalization.characters,
-                          decoration: InputDecoration(
-                            hintText: 'e.g., KL-2012345678901',
-                            hintStyle: TextStyle(color: Colors.grey.shade500),
-                            prefixIcon: Icon(
-                              Icons.credit_card_outlined,
-                              color: Colors.grey.shade600,
-                              size: 20,
-                            ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.all(16),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Car Model Field
-                      const Text(
-                        'Car Model',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A1A2E),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: Colors.grey.shade200,
-                            width: 1,
-                          ),
-                        ),
-                        child: DropdownButtonFormField<String>(
-                          value: _selectedCarModel,
-                          validator: _validateCarModel,
-                          decoration: InputDecoration(
-                            hintText: 'Select your car model',
-                            hintStyle: TextStyle(color: Colors.grey.shade500),
-                            prefixIcon: Icon(
-                              Icons.directions_car_outlined,
-                              color: Colors.grey.shade600,
-                              size: 20,
-                            ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.all(16),
-                          ),
-                          items: _carModels.map((String model) {
-                            return DropdownMenuItem<String>(
-                              value: model,
-                              child: Text(
-                                model,
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (String? newValue) {
-                            setState(() {
-                              _selectedCarModel = newValue;
-                              if (newValue == 'Other') {
-                                // If "Other" is selected, show text field
-                                _carModelController.clear();
-                              } else {
-                                _carModelController.text = newValue ?? '';
-                              }
-                            });
-                          },
-                          isExpanded: true,
-                          dropdownColor: Colors.white,
-                          style: const TextStyle(
-                            color: Color(0xFF1A1A2E),
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-
-                      // Custom car model field (shown when "Other" is selected)
-                      if (_selectedCarModel == 'Other') ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade50,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: Colors.grey.shade200,
-                              width: 1,
-                            ),
-                          ),
-                          child: TextFormField(
-                            controller: _carModelController,
-                            validator: (value) {
-                              if (_selectedCarModel == 'Other' &&
-                                  (value == null || value.isEmpty)) {
-                                return 'Please enter your car model';
-                              }
-                              return null;
-                            },
-                            decoration: InputDecoration(
-                              hintText: 'Enter your car model',
-                              hintStyle: TextStyle(color: Colors.grey.shade500),
-                              prefixIcon: Icon(
-                                Icons.edit_outlined,
-                                color: Colors.grey.shade600,
-                                size: 20,
-                              ),
-                              border: InputBorder.none,
-                              contentPadding: const EdgeInsets.all(16),
-                            ),
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 20),
-                    ],
 
                     // Password Field
                     const Text(
@@ -1031,9 +891,211 @@ class _RegisterPageState extends State<RegisterPage> {
                         ),
                       ),
                     ),
+
+                    // Driver-specific fields
+                    if (_isDriverRegistration) ...[
+                      const SizedBox(height: 20),
+
+                      // License ID Field
+                      const Text(
+                        'License ID',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A2E),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.grey.shade200,
+                            width: 1,
+                          ),
+                        ),
+                        child: TextFormField(
+                          controller: _licenseIdController,
+                          validator: _validateLicenseId,
+                          decoration: InputDecoration(
+                            hintText: 'KL01 20230000001',
+                            hintStyle: TextStyle(color: Colors.grey.shade500),
+                            prefixIcon: Icon(
+                              Icons.credit_card,
+                              color: Colors.grey.shade600,
+                              size: 20,
+                            ),
+                            suffixIcon: _isValidatingLicense
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  )
+                                : IconButton(
+                                    onPressed: _validateLicenseInDatabase,
+                                    icon: Icon(
+                                      _licenseHolderName != null
+                                          ? Icons.check_circle
+                                          : Icons.search,
+                                      color: _licenseHolderName != null
+                                          ? Colors.green
+                                          : Colors.grey.shade600,
+                                      size: 20,
+                                    ),
+                                  ),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.all(16),
+                          ),
+                          onChanged: (value) {
+                            if (_licenseHolderName != null) {
+                              setState(() {
+                                _licenseHolderName = null;
+                              });
+                            }
+                          },
+                        ),
+                      ),
+
+                      // License validation result
+                      if (_licenseHolderName != null)
+                        Container(
+                          margin: const EdgeInsets.only(top: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.green.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.check_circle,
+                                color: Colors.green.shade600,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Valid License - Holder: $_licenseHolderName',
+                                  style: TextStyle(
+                                    color: Colors.green.shade700,
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      const SizedBox(height: 20),
+
+                      // Car Model Field
+                      const Text(
+                        'Car Model',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A2E),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.grey.shade200,
+                            width: 1,
+                          ),
+                        ),
+                        child: DropdownButtonFormField<String>(
+                          value: _selectedCarModel,
+                          validator: _validateCarModel,
+                          decoration: InputDecoration(
+                            hintText: 'Select your car model',
+                            hintStyle: TextStyle(color: Colors.grey.shade500),
+                            prefixIcon: Icon(
+                              Icons.directions_car_outlined,
+                              color: Colors.grey.shade600,
+                              size: 20,
+                            ),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.all(16),
+                          ),
+                          items: _carModels.map((String model) {
+                            return DropdownMenuItem<String>(
+                              value: model,
+                              child: Text(
+                                model,
+                                style: const TextStyle(
+                                  color: Color(0xFF1A1A2E),
+                                  fontSize: 14,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              _selectedCarModel = newValue;
+                            });
+                          },
+                          dropdownColor: Colors.white,
+                          icon: Icon(
+                            Icons.keyboard_arrow_down,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Car Number Field
+                      const Text(
+                        'Car Registration Number',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A2E),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.grey.shade200,
+                            width: 1,
+                          ),
+                        ),
+                        child: TextFormField(
+                          controller: _carNumberController,
+                          validator: _validateCarNumber,
+                          textCapitalization: TextCapitalization.characters,
+                          decoration: InputDecoration(
+                            hintText: 'Enter car number (e.g., KL01 AB 1234)',
+                            hintStyle: TextStyle(color: Colors.grey.shade500),
+                            prefixIcon: Icon(
+                              Icons.confirmation_number_outlined,
+                              color: Colors.grey.shade600,
+                              size: 20,
+                            ),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.all(16),
+                          ),
+                        ),
+                      ),
+                    ],
+
                     const SizedBox(height: 32),
 
-                    // Create Account Button
+                    // Register Button
                     Container(
                       width: double.infinity,
                       height: 56,
@@ -1056,7 +1118,7 @@ class _RegisterPageState extends State<RegisterPage> {
                       child: ElevatedButton(
                         onPressed: (_isEmailLoading || _isGoogleLoading)
                             ? null
-                            : _submitForm,
+                            : _registerWithEmail,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
                           shadowColor: Colors.transparent,
@@ -1085,110 +1147,6 @@ class _RegisterPageState extends State<RegisterPage> {
                               ),
                       ),
                     ),
-
-                    // Show Google sign-up only for regular users, not drivers
-                    if (!_isDriverRegistration) ...[
-                      const SizedBox(height: 24),
-
-                      // Divider with "OR"
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Container(
-                              height: 1,
-                              color: Colors.grey.shade300,
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Text(
-                              'OR',
-                              style: TextStyle(
-                                color: Colors.grey.shade600,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: Container(
-                              height: 1,
-                              color: Colors.grey.shade300,
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      // Google Sign-Up Button (only for users)
-                      Container(
-                        width: double.infinity,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: Colors.grey.shade300,
-                            width: 1,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: ElevatedButton(
-                          onPressed: (_isEmailLoading || _isGoogleLoading)
-                              ? null
-                              : _signUpWithGoogle,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            shadowColor: Colors.transparent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          child: _isGoogleLoading
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.grey,
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Container(
-                                      width: 24,
-                                      height: 24,
-                                      decoration: const BoxDecoration(
-                                        image: DecorationImage(
-                                          image: NetworkImage(
-                                            'https://developers.google.com/identity/images/g-logo.png',
-                                          ),
-                                          fit: BoxFit.contain,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    const Text(
-                                      'Sign up with Google',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF1A1A2E),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                        ),
-                      ),
-                    ],
 
                     const SizedBox(height: 32),
 

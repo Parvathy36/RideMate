@@ -463,51 +463,51 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
               ),
               const SizedBox(height: 24),
               _buildSidebarItem(
-                icon: Icons.people,
-                title: 'Manage Users',
-                subtitle: 'View and manage all users',
+                icon: Icons.verified_user,
+                title: 'Driver Approvals',
+                subtitle: '23 pending driver verifications',
+                color: Colors.orange,
+                onTap: () => _showFeatureDialog('Driver Approvals'),
+              ),
+              const SizedBox(height: 12),
+              _buildSidebarItem(
+                icon: Icons.people_outline,
+                title: 'User Management',
+                subtitle: '2,847 total users, 156 active drivers',
                 color: Colors.blue,
-                onTap: () => _showFeatureDialog('Manage Users'),
+                onTap: () => _showFeatureDialog('User Management'),
               ),
               const SizedBox(height: 12),
               _buildSidebarItem(
-                icon: Icons.local_taxi,
-                title: 'Manage Rides',
-                subtitle: 'Monitor all ride requests',
+                icon: Icons.local_taxi_outlined,
+                title: 'Ride Monitoring',
+                subtitle: '45 active rides, 1,234 completed today',
                 color: Colors.green,
-                onTap: () => _showFeatureDialog('Manage Rides'),
+                onTap: () => _showFeatureDialog('Ride Monitoring'),
               ),
               const SizedBox(height: 12),
               _buildSidebarItem(
-                icon: Icons.analytics,
-                title: 'Analytics',
-                subtitle: 'View app statistics',
-                color: Colors.deepPurple,
-                onTap: () => _showFeatureDialog('Analytics'),
-              ),
-              const SizedBox(height: 12),
-              _buildSidebarItem(
-                icon: Icons.settings,
-                title: 'Settings',
-                subtitle: 'App configuration',
+                icon: Icons.account_balance_wallet,
+                title: 'Payment Management',
+                subtitle: '₹18,450 today, ₹2.4L this month',
                 color: Colors.amber,
-                onTap: () => _showFeatureDialog('Settings'),
-              ),
-              const SizedBox(height: 12),
-              _buildSidebarItem(
-                icon: Icons.report,
-                title: 'Reports',
-                subtitle: 'Generate reports',
-                color: Colors.teal,
-                onTap: () => _showFeatureDialog('Reports'),
+                onTap: () => _showFeatureDialog('Payment Management'),
               ),
               const SizedBox(height: 12),
               _buildSidebarItem(
                 icon: Icons.support_agent,
-                title: 'Support',
-                subtitle: 'Customer support',
-                color: Colors.indigo,
-                onTap: () => _showFeatureDialog('Support'),
+                title: 'Support Tickets',
+                subtitle: '7 open tickets, avg response 2.3h',
+                color: Colors.red,
+                onTap: () => _showFeatureDialog('Support Tickets'),
+              ),
+              const SizedBox(height: 12),
+              _buildSidebarItem(
+                icon: Icons.analytics_outlined,
+                title: 'Analytics & Reports',
+                subtitle: 'Revenue, usage, and performance data',
+                color: Colors.deepPurple,
+                onTap: () => _showFeatureDialog('Analytics & Reports'),
               ),
             ],
           ),
@@ -522,12 +522,177 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
       children: [
         _buildStatsSection(),
         const SizedBox(height: 24),
+        _buildQuickActionsSection(),
+        const SizedBox(height: 24),
         _buildRecentActivitySection(),
       ],
     );
   }
 
-  // Stats section widget
+  // Quick actions section for common admin tasks
+  Widget _buildQuickActionsSection() {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: SlideTransition(
+        position: _slideAnimation,
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 25,
+                spreadRadius: 0,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Colors.amber, Colors.amber.shade700],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.flash_on,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Quick Actions',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1A1A2E),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildQuickActionButton(
+                      'Approve Drivers',
+                      Icons.verified_user,
+                      Colors.orange,
+                      '23 pending',
+                      () => _showFeatureDialog('Driver Approvals'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildQuickActionButton(
+                      'View Support',
+                      Icons.support_agent,
+                      Colors.red,
+                      '7 tickets',
+                      () => _showFeatureDialog('Support Tickets'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildQuickActionButton(
+                      'Generate Report',
+                      Icons.analytics_outlined,
+                      Colors.deepPurple,
+                      'Daily report',
+                      () => _showFeatureDialog('Analytics & Reports'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActionButton(
+    String title,
+    IconData icon,
+    Color color,
+    String subtitle,
+    VoidCallback onTap,
+  ) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200, width: 1),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        color.withValues(alpha: 0.15),
+                        color.withValues(alpha: 0.08),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: color.withValues(alpha: 0.2),
+                      width: 1,
+                    ),
+                  ),
+                  child: Icon(icon, size: 18, color: color),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1A1A2E),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w400,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Stats section widget with more realistic data
   Widget _buildStatsSection() {
     return FadeTransition(
       opacity: _fadeAnimation,
@@ -540,51 +705,138 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 20,
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 25,
                 spreadRadius: 0,
-                offset: const Offset(0, 10),
+                offset: const Offset(0, 12),
               ),
             ],
           ),
           child: Column(
             children: [
-              const Text(
-                'Quick Overview',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1A1A2E),
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-              // Always horizontal layout for stats
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Colors.deepPurple, Colors.deepPurple.shade700],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.dashboard,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Dashboard Overview',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1A1A2E),
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: Colors.green.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: const Text(
+                      'Live',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              // Stats grid with better spacing
+              Row(
                 children: [
                   Expanded(
                     child: _buildModernStatItem(
                       'Total Users',
-                      '1,234',
-                      Icons.people,
+                      '2,847',
+                      Icons.people_outline,
                       Colors.blue,
+                      '+12%',
+                      true,
                     ),
                   ),
+                  const SizedBox(width: 16),
                   Expanded(
                     child: _buildModernStatItem(
-                      'Active Rides',
-                      '56',
-                      Icons.local_taxi,
+                      'Active Drivers',
+                      '156',
+                      Icons.local_taxi_outlined,
                       Colors.green,
+                      '+8%',
+                      true,
                     ),
                   ),
+                  const SizedBox(width: 16),
                   Expanded(
                     child: _buildModernStatItem(
-                      'Revenue',
-                      '₹45,678',
+                      'Today\'s Revenue',
+                      '₹18,450',
                       Icons.currency_rupee,
                       Colors.amber,
+                      '+15%',
+                      true,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildModernStatItem(
+                      'Completed Rides',
+                      '1,234',
+                      Icons.check_circle_outline,
+                      Colors.teal,
+                      '+5%',
+                      true,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildModernStatItem(
+                      'Pending Approvals',
+                      '23',
+                      Icons.pending_actions,
+                      Colors.orange,
+                      '-2%',
+                      false,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildModernStatItem(
+                      'Support Tickets',
+                      '7',
+                      Icons.support_agent,
+                      Colors.red,
+                      '+3%',
+                      false,
                     ),
                   ),
                 ],
@@ -648,40 +900,40 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
                 childAspectRatio: 1.1,
                 children: [
                   _buildMobileAdminCard(
-                    icon: Icons.people,
+                    icon: Icons.verified_user,
+                    title: 'Approvals',
+                    color: Colors.orange,
+                    onTap: () => _showFeatureDialog('Driver Approvals'),
+                  ),
+                  _buildMobileAdminCard(
+                    icon: Icons.people_outline,
                     title: 'Users',
                     color: Colors.blue,
-                    onTap: () => _showFeatureDialog('Manage Users'),
+                    onTap: () => _showFeatureDialog('User Management'),
                   ),
                   _buildMobileAdminCard(
-                    icon: Icons.local_taxi,
+                    icon: Icons.local_taxi_outlined,
                     title: 'Rides',
                     color: Colors.green,
-                    onTap: () => _showFeatureDialog('Manage Rides'),
+                    onTap: () => _showFeatureDialog('Ride Monitoring'),
                   ),
                   _buildMobileAdminCard(
-                    icon: Icons.analytics,
-                    title: 'Analytics',
-                    color: Colors.deepPurple,
-                    onTap: () => _showFeatureDialog('Analytics'),
-                  ),
-                  _buildMobileAdminCard(
-                    icon: Icons.settings,
-                    title: 'Settings',
+                    icon: Icons.account_balance_wallet,
+                    title: 'Payments',
                     color: Colors.amber,
-                    onTap: () => _showFeatureDialog('Settings'),
-                  ),
-                  _buildMobileAdminCard(
-                    icon: Icons.report,
-                    title: 'Reports',
-                    color: Colors.teal,
-                    onTap: () => _showFeatureDialog('Reports'),
+                    onTap: () => _showFeatureDialog('Payment Management'),
                   ),
                   _buildMobileAdminCard(
                     icon: Icons.support_agent,
                     title: 'Support',
-                    color: Colors.indigo,
-                    onTap: () => _showFeatureDialog('Support'),
+                    color: Colors.red,
+                    onTap: () => _showFeatureDialog('Support Tickets'),
+                  ),
+                  _buildMobileAdminCard(
+                    icon: Icons.analytics_outlined,
+                    title: 'Analytics',
+                    color: Colors.deepPurple,
+                    onTap: () => _showFeatureDialog('Analytics & Reports'),
                   ),
                 ],
               ),
@@ -692,7 +944,7 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
     );
   }
 
-  // Recent activity section
+  // Recent activity section with more realistic data
   Widget _buildRecentActivitySection() {
     return FadeTransition(
       opacity: _fadeAnimation,
@@ -705,51 +957,102 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 20,
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 25,
                 spreadRadius: 0,
-                offset: const Offset(0, 10),
+                offset: const Offset(0, 12),
               ),
             ],
           ),
           child: Column(
             children: [
-              const Text(
-                'Recent Activity',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1A1A2E),
-                ),
-                textAlign: TextAlign.center,
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Colors.teal, Colors.teal.shade700],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.timeline,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Recent Activity',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1A1A2E),
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => _showFeatureDialog('Activity Log'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.teal,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                    ),
+                    child: const Text(
+                      'View All',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 20),
               _buildActivityItem(
-                'New user registered',
+                'Driver Rajesh Kumar approved',
                 '2 minutes ago',
-                Icons.person_add,
+                Icons.verified_user,
                 Colors.green,
+                'License KL01 20230000001 verified',
               ),
               const SizedBox(height: 12),
               _buildActivityItem(
-                'Ride completed successfully',
-                '5 minutes ago',
+                'Ride completed: Kochi to Ernakulam',
+                '8 minutes ago',
                 Icons.check_circle,
                 Colors.blue,
+                '₹245 earned by driver',
               ),
               const SizedBox(height: 12),
               _buildActivityItem(
-                'Payment processed',
-                '10 minutes ago',
-                Icons.payment,
-                Colors.amber,
-              ),
-              const SizedBox(height: 12),
-              _buildActivityItem(
-                'New ride request',
+                'New user registration',
                 '15 minutes ago',
-                Icons.local_taxi,
+                Icons.person_add,
+                Colors.amber,
+                'Priya Nair joined as passenger',
+              ),
+              const SizedBox(height: 12),
+              _buildActivityItem(
+                'Payment dispute resolved',
+                '32 minutes ago',
+                Icons.gavel,
                 Colors.deepPurple,
+                'Refund of ₹180 processed',
+              ),
+              const SizedBox(height: 12),
+              _buildActivityItem(
+                'System maintenance completed',
+                '1 hour ago',
+                Icons.build_circle,
+                Colors.teal,
+                'Database optimization finished',
               ),
             ],
           ),
@@ -911,46 +1214,102 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
     String label,
     String value,
     IconData icon,
-    Color color,
-  ) {
-    return Column(
-      children: [
-        Container(
-          width: 50,
-          height: 50,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                color.withValues(alpha: 0.1),
-                color.withValues(alpha: 0.05),
-              ],
+    Color color, [
+    String? changePercent,
+    bool? isPositive,
+  ]) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200, width: 1),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      color.withValues(alpha: 0.15),
+                      color.withValues(alpha: 0.08),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: color.withValues(alpha: 0.2),
+                    width: 1,
+                  ),
+                ),
+                child: Icon(icon, size: 18, color: color),
+              ),
+              const Spacer(),
+              if (changePercent != null && isPositive != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isPositive
+                        ? Colors.green.withValues(alpha: 0.1)
+                        : Colors.red.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isPositive ? Icons.trending_up : Icons.trending_down,
+                        size: 10,
+                        color: isPositive ? Colors.green : Colors.red,
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        changePercent,
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w600,
+                          color: isPositive ? Colors.green : Colors.red,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF1A1A2E),
+              ),
             ),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: color.withValues(alpha: 0.2), width: 1),
           ),
-          child: Icon(icon, size: 24, color: color),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF1A1A2E),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey.shade600,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1038,8 +1397,9 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
     String title,
     String time,
     IconData icon,
-    Color color,
-  ) {
+    Color color, [
+    String? description,
+  ]) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1057,12 +1417,15 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  color.withValues(alpha: 0.1),
-                  color.withValues(alpha: 0.05),
+                  color.withValues(alpha: 0.15),
+                  color.withValues(alpha: 0.08),
                 ],
               ),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: color.withValues(alpha: 0.2), width: 1),
+              border: Border.all(
+                color: color.withValues(alpha: 0.25),
+                width: 1,
+              ),
             ),
             child: Icon(icon, size: 20, color: color),
           ),
@@ -1079,17 +1442,43 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
                     color: Color(0xFF1A1A2E),
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  time,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                    fontWeight: FontWeight.w400,
+                if (description != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w400,
+                    ),
                   ),
+                ],
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.access_time,
+                      size: 12,
+                      color: Colors.grey.shade500,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      time,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade500,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
+          ),
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
         ],
       ),
@@ -1097,6 +1486,9 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
   }
 
   void _showFeatureDialog(String feature) {
+    // Get feature-specific data
+    Map<String, dynamic> featureData = _getFeatureData(feature);
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -1113,22 +1505,21 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [Colors.amber, Colors.amber.shade600],
+                    colors: [
+                      featureData['color'],
+                      featureData['color'].shade700,
+                    ],
                   ),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
-                  Icons.info_outline,
-                  color: Colors.white,
-                  size: 20,
-                ),
+                child: Icon(featureData['icon'], color: Colors.white, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   feature,
                   style: const TextStyle(
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF1A1A2E),
                   ),
@@ -1136,30 +1527,114 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
               ),
             ],
           ),
-          content: Text(
-            '$feature functionality will be implemented here. This feature is coming soon with advanced capabilities.',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade600,
-              height: 1.5,
-            ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                featureData['description'],
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade700,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: featureData['color'].withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: featureData['color'].withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Key Features:',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: featureData['color'],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    ...featureData['features']
+                        .map<Widget>(
+                          (feature) => Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.check_circle,
+                                  size: 12,
+                                  color: featureData['color'],
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    feature,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey.shade700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ],
+                ),
+              ),
+            ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               style: TextButton.styleFrom(
-                backgroundColor: Colors.amber.withValues(alpha: 0.1),
-                foregroundColor: Colors.amber.shade700,
+                backgroundColor: Colors.grey.withValues(alpha: 0.1),
+                foregroundColor: Colors.grey.shade700,
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
+                  horizontal: 20,
+                  vertical: 10,
                 ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
               child: const Text(
-                'Got it',
+                'Close',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                // Here you would navigate to the actual feature page
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('$feature feature coming soon!'),
+                    backgroundColor: featureData['color'],
+                  ),
+                );
+              },
+              style: TextButton.styleFrom(
+                backgroundColor: featureData['color'].withValues(alpha: 0.1),
+                foregroundColor: featureData['color'],
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                'Open',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
@@ -1167,6 +1642,102 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
         );
       },
     );
+  }
+
+  Map<String, dynamic> _getFeatureData(String feature) {
+    switch (feature) {
+      case 'Driver Approvals':
+        return {
+          'color': Colors.orange,
+          'icon': Icons.verified_user,
+          'description':
+              'Review and approve new driver registrations. Verify licenses, documents, and vehicle information.',
+          'features': [
+            'License verification system',
+            'Document upload review',
+            'Background check integration',
+            'Bulk approval actions',
+            'Rejection with feedback',
+          ],
+        };
+      case 'User Management':
+        return {
+          'color': Colors.blue,
+          'icon': Icons.people_outline,
+          'description':
+              'Comprehensive user management system for both passengers and drivers.',
+          'features': [
+            'User profile management',
+            'Account suspension/activation',
+            'User activity tracking',
+            'Communication tools',
+            'User verification status',
+          ],
+        };
+      case 'Ride Monitoring':
+        return {
+          'color': Colors.green,
+          'icon': Icons.local_taxi_outlined,
+          'description':
+              'Real-time monitoring of all ride activities and trip management.',
+          'features': [
+            'Live ride tracking',
+            'Trip history and analytics',
+            'Route optimization',
+            'Emergency response system',
+            'Ride quality monitoring',
+          ],
+        };
+      case 'Payment Management':
+        return {
+          'color': Colors.amber,
+          'icon': Icons.account_balance_wallet,
+          'description':
+              'Complete payment processing and financial management system.',
+          'features': [
+            'Transaction monitoring',
+            'Refund processing',
+            'Driver payout management',
+            'Financial reporting',
+            'Payment dispute resolution',
+          ],
+        };
+      case 'Support Tickets':
+        return {
+          'color': Colors.red,
+          'icon': Icons.support_agent,
+          'description':
+              'Customer support ticket management and resolution system.',
+          'features': [
+            'Ticket categorization',
+            'Priority-based routing',
+            'Response time tracking',
+            'Customer satisfaction surveys',
+            'Knowledge base integration',
+          ],
+        };
+      case 'Analytics & Reports':
+        return {
+          'color': Colors.deepPurple,
+          'icon': Icons.analytics_outlined,
+          'description':
+              'Advanced analytics and reporting dashboard for business insights.',
+          'features': [
+            'Revenue analytics',
+            'User behavior insights',
+            'Performance metrics',
+            'Custom report generation',
+            'Data export capabilities',
+          ],
+        };
+      default:
+        return {
+          'color': Colors.grey,
+          'icon': Icons.info_outline,
+          'description': 'This feature is currently under development.',
+          'features': ['Coming soon'],
+        };
+    }
   }
 
   void _showProfileDialog() {

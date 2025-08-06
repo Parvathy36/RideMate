@@ -1,0 +1,154 @@
+{
+  "valid_licenses": [
+    {
+      "licenseId": "KL-0120230001234",
+      "name": "Rajesh Kumar",
+      "state": "Kerala",
+      "district": "Thiruvananthapuram",
+      "issueDate": "2023-01-15",
+      "expiryDate": "2043-01-15",
+      "vehicleClass": "LMV",
+      "isActive": true
+    },
+    {
+      "licenseId": "KL-0220230002345",
+      "name": "Priya Nair",
+      "state": "Kerala",
+      "district": "Kochi",
+      "issueDate": "2023-02-20",
+      "expiryDate": "2043-02-20",
+      "vehicleClass": "LMV",
+      "isActive": true
+    },
+    {
+      "licenseId": "TN-0320230003456",
+      "name": "Arjun Krishnan",
+      "state": "Tamil Nadu",
+      "district": "Chennai",
+      "issueDate": "2023-03-10",
+      "expiryDate": "2043-03-10",
+      "vehicleClass": "LMV",
+      "isActive": true
+    },
+    {
+      "licenseId": "KA-0420230004567",
+      "name": "Deepika Sharma",
+      "state": "Karnataka",
+      "district": "Bangalore",
+      "issueDate": "2023-04-05",
+      "expiryDate": "2043-04-05",
+      "vehicleClass": "LMV",
+      "isActive": true
+    },
+    {
+      "licenseId": "MH-0520230005678",
+      "name": "Vikram Patil",
+      "state": "Maharashtra",
+      "district": "Mumbai",
+      "issueDate": "2023-05-12",
+      "expiryDate": "2043-05-12",
+      "vehicleClass": "LMV",
+      "isActive": true
+    },
+    {
+      "licenseId": "DL-0620230006789",
+      "name": "Neha Gupta",
+      "state": "Delhi",
+      "district": "New Delhi",
+      "issueDate": "2023-06-18",
+      "expiryDate": "2043-06-18",
+      "vehicleClass": "LMV",
+      "isActive": true
+    },
+    {
+      "licenseId": "UP-0720230007890",
+      "name": "Amit Singh",
+      "state": "Uttar Pradesh",
+      "district": "Lucknow",
+      "issueDate": "2023-07-25",
+      "expiryDate": "2043-07-25",
+      "vehicleClass": "LMV",
+      "isActive": true
+    },
+    {
+      "licenseId": "GJ-0820230008901",
+      "name": "Ravi Patel",
+      "state": "Gujarat",
+      "district": "Ahmedabad",
+      "issueDate": "2023-08-30",
+      "expiryDate": "2043-08-30",
+      "vehicleClass": "LMV",
+      "isActive": true
+    },
+    {
+      "licenseId": "RJ-0920230009012",
+      "name": "Sunita Meena",
+      "state": "Rajasthan",
+      "district": "Jaipur",
+      "issueDate": "2023-09-14",
+      "expiryDate": "2043-09-14",
+      "vehicleClass": "LMV",
+      "isActive": true
+    },
+    {
+      "licenseId": "KL-2020230010123",
+      "name": "Harpreet Singh",
+      "state": "Punjab",
+      "district": "Chandigarh",
+      "issueDate": "2023-10-08",
+      "expiryDate": "2043-10-08",
+      "vehicleClass": "LMV",
+      "isActive": true
+    },
+    {
+      "licenseId": "KL-2020230011234",
+      "name": "Sourav Das",
+      "state": "West Bengal",
+      "district": "Kolkata",
+      "issueDate": "2023-11-22",
+      "expiryDate": "2043-11-22",
+      "vehicleClass": "LMV",
+      "isActive": true
+    },
+    {
+      "licenseId": "KL-202230012345",
+      "name": "Lakshmi Reddy",
+      "state": "Andhra Pradesh",
+      "district": "Hyderabad",
+      "issueDate": "2023-12-03",
+      "expiryDate": "2043-12-03",
+      "vehicleClass": "LMV",
+      "isActive": true
+    },
+    {
+      "licenseId": "KL-2020240013456",
+      "name": "Kiran Kumar",
+      "state": "Telangana",
+      "district": "Hyderabad",
+      "issueDate": "2024-01-16",
+      "expiryDate": "2044-01-16",
+      "vehicleClass": "LMV",
+      "isActive": true
+    },
+    {
+      "licenseId": "KL-2021240014567",
+      "name": "Bijay Mohanty",
+      "state": "Odisha",
+      "district": "Bhubaneswar",
+      "issueDate": "2024-02-28",
+      "expiryDate": "2044-02-28",
+      "vehicleClass": "LMV",
+      "isActive": true
+    },
+    {
+      "licenseId": "KL-2020240015678",
+      "name": "Rahul Mahato",
+      "state": "Jharkhand",
+      "district": "Ranchi",
+      "issueDate": "2024-03-11",
+      "expiryDate": "2044-03-11",
+      "vehicleClass": "LMV",
+      "isActive": true
+    }
+  ]
+}
