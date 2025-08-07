@@ -503,30 +503,59 @@ class _LoginPageState extends State<LoginPage> {
 
                     const SizedBox(height: 24),
 
-                    // Divider with "OR"
+                    // Elegant Divider
                     Row(
                       children: [
                         Expanded(
                           child: Container(
                             height: 1,
-                            color: Colors.grey.shade300,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.deepPurple.withValues(alpha: 0.3),
+                                  Colors.deepPurple.withValues(alpha: 0.1),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.deepPurple.withValues(alpha: 0.1),
+                              width: 1,
+                            ),
+                          ),
                           child: Text(
                             'OR',
                             style: TextStyle(
-                              color: Colors.grey.shade600,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
+                              color: Colors.deepPurple.shade600,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 1.2,
                             ),
                           ),
                         ),
                         Expanded(
                           child: Container(
                             height: 1,
-                            color: Colors.grey.shade300,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Colors.deepPurple.withValues(alpha: 0.1),
+                                  Colors.deepPurple.withValues(alpha: 0.3),
+                                  Colors.transparent,
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -685,10 +714,10 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             );
                           },
-                          child: const Text(
+                          child: Text(
                             'Sign Up',
                             style: TextStyle(
-                              color: Colors.deepPurple,
+                              color: Colors.deepPurple.shade600,
                               fontWeight: FontWeight.w600,
                               fontSize: 14,
                             ),
