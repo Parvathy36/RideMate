@@ -21,7 +21,16 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
   List<Map<String, dynamic>> _allDrivers = [];
   List<Map<String, dynamic>> _pendingDrivers = [];
   List<Map<String, dynamic>> _approvedDrivers = [];
+  List<Map<String, dynamic>> _filteredDrivers = [];
   bool _isLoadingDrivers = true;
+
+  // Police clearance data
+  Map<String, Map<String, dynamic>> _policeClearanceData = {};
+
+  // Search functionality
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _statusFilter = 'all'; // all, active, inactive, pending, approved
 
   // Sidebar navigation
   int _selectedIndex = 0;
@@ -74,16 +83,36 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
       final pendingDrivers = await FirestoreService.getPendingDrivers();
       final approvedDrivers = await FirestoreService.getApprovedDrivers();
 
+      // Get police clearance data for all drivers
+      final licenseIds = allDrivers
+          .map((driver) => driver['licenseId'] as String?)
+          .where((licenseId) => licenseId != null && licenseId.isNotEmpty)
+          .cast<String>()
+          .toList();
+
+      final policeClearanceData =
+          await FirestoreService.getPoliceClearanceForDrivers(licenseIds);
+
       setState(() {
         _allDrivers = allDrivers;
         _pendingDrivers = pendingDrivers;
         _approvedDrivers = approvedDrivers;
+        _filteredDrivers = allDrivers;
+        _policeClearanceData = policeClearanceData;
         _isLoadingDrivers = false;
       });
+
+      // Apply search filter if there's a query
+      if (_searchQuery.isNotEmpty) {
+        _filterDrivers(_searchQuery);
+      }
 
       print('📊 Loaded ${allDrivers.length} total drivers');
       print('⏳ ${pendingDrivers.length} pending drivers');
       print('✅ ${approvedDrivers.length} approved drivers');
+      print(
+        '🚔 Loaded police clearance data for ${policeClearanceData.length} drivers',
+      );
     } catch (e) {
       print('❌ Error loading driver data: $e');
       setState(() {
@@ -96,7 +125,58 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
   void dispose() {
     _fadeController.dispose();
     _slideController.dispose();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  void _filterDrivers(String query) {
+    setState(() {
+      _searchQuery = query;
+
+      List<Map<String, dynamic>> filteredList = _allDrivers;
+
+      // Apply text search filter
+      if (query.isNotEmpty) {
+        filteredList = filteredList.where((driver) {
+          final name = (driver['name'] ?? '').toString().toLowerCase();
+          final email = (driver['email'] ?? '').toString().toLowerCase();
+          final phone = (driver['phoneNumber'] ?? '').toString().toLowerCase();
+          final license = (driver['licenseId'] ?? '').toString().toLowerCase();
+          final carNumber = (driver['carNumber'] ?? '')
+              .toString()
+              .toLowerCase();
+          final searchLower = query.toLowerCase();
+
+          return name.contains(searchLower) ||
+              email.contains(searchLower) ||
+              phone.contains(searchLower) ||
+              license.contains(searchLower) ||
+              carNumber.contains(searchLower);
+        }).toList();
+      }
+
+      // Apply status filter
+      if (_statusFilter != 'all') {
+        filteredList = filteredList.where((driver) {
+          switch (_statusFilter) {
+            case 'pending':
+              return !(driver['isApproved'] ?? false);
+            case 'approved':
+              return driver['isApproved'] ?? false;
+            case 'active':
+              return (driver['isApproved'] ?? false) &&
+                  (driver['isActive'] ?? false);
+            case 'inactive':
+              return (driver['isApproved'] ?? false) &&
+                  !(driver['isActive'] ?? false);
+            default:
+              return true;
+          }
+        }).toList();
+      }
+
+      _filteredDrivers = filteredList;
+    });
   }
 
   Future<void> _signOut() async {
@@ -573,11 +653,124 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
             ),
           ),
 
+          // Search Bar and Filters
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: _filterDrivers,
+                      decoration: InputDecoration(
+                        hintText:
+                            'Search drivers by name, email, phone, license, or car number...',
+                        prefixIcon: Icon(
+                          Icons.search,
+                          color: Colors.grey.shade600,
+                        ),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                onPressed: () {
+                                  _searchController.clear();
+                                  _filterDrivers('');
+                                },
+                                icon: Icon(
+                                  Icons.clear,
+                                  color: Colors.grey.shade600,
+                                ),
+                              )
+                            : null,
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _statusFilter,
+                      onChanged: (String? newValue) {
+                        if (newValue != null) {
+                          setState(() {
+                            _statusFilter = newValue;
+                          });
+                          _filterDrivers(_searchQuery);
+                        }
+                      },
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'all',
+                          child: Text('All Status'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'pending',
+                          child: Text('Pending'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'approved',
+                          child: Text('Approved'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'active',
+                          child: Text('Active'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'inactive',
+                          child: Text('Inactive'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
           // Drivers List
           if (_isLoadingDrivers)
             const Padding(
               padding: EdgeInsets.all(24),
               child: Center(child: CircularProgressIndicator()),
+            )
+          else if ((_searchQuery.isNotEmpty || _statusFilter != 'all') &&
+              _filteredDrivers.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.search_off, size: 48, color: Colors.grey[400]),
+                    const SizedBox(height: 16),
+                    Text(
+                      _searchQuery.isNotEmpty
+                          ? 'No drivers found matching "$_searchQuery"'
+                          : 'No drivers found with status "${_statusFilter}"',
+                      style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
             )
           else if (_allDrivers.isEmpty)
             Padding(
@@ -604,58 +797,118 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
 
   // Build drivers list
   Widget _buildDriversList() {
+    // If searching or filtering (but not "all"), show filtered results
+    if (_searchQuery.isNotEmpty || _statusFilter != 'all') {
+      String headerText = 'Filtered Results (${_filteredDrivers.length})';
+      if (_searchQuery.isNotEmpty && _statusFilter != 'all') {
+        headerText = 'Search & Filter Results (${_filteredDrivers.length})';
+      } else if (_searchQuery.isNotEmpty) {
+        headerText = 'Search Results (${_filteredDrivers.length})';
+      } else {
+        headerText =
+            '${_statusFilter.toUpperCase()} Drivers (${_filteredDrivers.length})';
+      }
+
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              children: [
+                Icon(
+                  _searchQuery.isNotEmpty ? Icons.search : Icons.filter_list,
+                  color: Colors.blue,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  headerText,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[800],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          ..._filteredDrivers.map(
+            (driver) =>
+                _buildDriverCard(driver, !(driver['isApproved'] ?? false)),
+          ),
+          const SizedBox(height: 24),
+        ],
+      );
+    }
+
+    // Default view for "All Status" - show all drivers in a single list
     return Column(
       children: [
-        // Show pending drivers first
-        if (_pendingDrivers.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Row(
-              children: [
-                Icon(Icons.pending, color: Colors.orange, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Pending Approval (${_pendingDrivers.length})',
+        // Header for all drivers
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Row(
+            children: [
+              Icon(Icons.people, color: Colors.deepPurple, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'All Drivers (${_allDrivers.length})',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[800],
+                ),
+              ),
+              const Spacer(),
+              // Show breakdown
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_pendingDrivers.length} Pending • ${_approvedDrivers.length} Approved',
                   style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[800],
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          ..._pendingDrivers
-              .take(5)
-              .map((driver) => _buildDriverCard(driver, true)),
-        ],
+        ),
+        const SizedBox(height: 12),
 
-        // Show approved drivers
-        if (_approvedDrivers.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Row(
-              children: [
-                Icon(Icons.verified, color: Colors.green, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Approved Drivers (${_approvedDrivers.length})',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[800],
-                  ),
-                ),
-              ],
+        // Show all drivers in a single list (pending first, then approved)
+        ...(_allDrivers..sort((a, b) {
+              // Sort by approval status first (pending first), then by registration date
+              final aApproved = a['isApproved'] ?? false;
+              final bApproved = b['isApproved'] ?? false;
+
+              if (aApproved != bApproved) {
+                return aApproved ? 1 : -1; // Pending (false) comes first
+              }
+
+              // If same approval status, sort by registration date (newest first)
+              final aDate = a['registrationDate'];
+              final bDate = b['registrationDate'];
+
+              if (aDate != null && bDate != null) {
+                return bDate.compareTo(aDate);
+              }
+
+              return 0;
+            }))
+            .map(
+              (driver) =>
+                  _buildDriverCard(driver, !(driver['isApproved'] ?? false)),
             ),
-          ),
-          const SizedBox(height: 12),
-          ..._approvedDrivers
-              .take(5)
-              .map((driver) => _buildDriverCard(driver, false)),
-        ],
 
         const SizedBox(height: 24),
       ],
@@ -962,6 +1215,56 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
                   'Phone: ${driver['phoneNumber'] ?? 'N/A'} • License: ${driver['licenseId'] ?? 'N/A'}',
                   style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                 ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: (driver['isActive'] ?? false)
+                            ? Colors.green.shade100
+                            : Colors.red.shade100,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        (driver['isActive'] ?? false) ? 'Active' : 'Inactive',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: (driver['isActive'] ?? false)
+                              ? Colors.green.shade700
+                              : Colors.red.shade700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (driver['isOnline'] ?? false)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade100,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          'Online',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(width: 8),
+                    // Police clearance badge
+                    _buildPoliceClearanceBadge(driver['licenseId']),
+                  ],
+                ),
               ],
             ),
           ),
@@ -1007,6 +1310,40 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
                         size: 20,
                       ),
                       tooltip: 'Reject',
+                    ),
+                  ],
+                ),
+              ] else ...[
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      onPressed: () => _toggleDriverStatus(
+                        driver['id'],
+                        driver['isActive'] ?? false,
+                      ),
+                      icon: Icon(
+                        (driver['isActive'] ?? false)
+                            ? Icons.block
+                            : Icons.check_circle,
+                        color: (driver['isActive'] ?? false)
+                            ? Colors.red
+                            : Colors.green,
+                        size: 20,
+                      ),
+                      tooltip: (driver['isActive'] ?? false)
+                          ? 'Disable'
+                          : 'Enable',
+                    ),
+                    IconButton(
+                      onPressed: () => _showDriverDetails(driver),
+                      icon: const Icon(
+                        Icons.info_outline,
+                        color: Colors.blue,
+                        size: 20,
+                      ),
+                      tooltip: 'View Details',
                     ),
                   ],
                 ),
@@ -1076,5 +1413,435 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
         );
       }
     }
+  }
+
+  Future<void> _toggleDriverStatus(String driverId, bool currentStatus) async {
+    try {
+      // Show confirmation dialog
+      final bool? confirm = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text(currentStatus ? 'Disable Driver' : 'Enable Driver'),
+            content: Text(
+              currentStatus
+                  ? 'Are you sure you want to disable this driver? They will not be able to accept rides.'
+                  : 'Are you sure you want to enable this driver? They will be able to accept rides.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: currentStatus ? Colors.red : Colors.green,
+                ),
+                child: Text(currentStatus ? 'Disable' : 'Enable'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (confirm == true) {
+        await FirestoreService.updateDriverStatus(
+          userId: driverId,
+          isActive: !currentStatus,
+        );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                currentStatus
+                    ? 'Driver disabled successfully!'
+                    : 'Driver enabled successfully!',
+              ),
+              backgroundColor: currentStatus ? Colors.orange : Colors.green,
+            ),
+          );
+        }
+
+        _loadDriverData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error updating driver status: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showDriverDetails(Map<String, dynamic> driver) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: Colors.deepPurple.shade100,
+                child: Text(
+                  (driver['name'] ?? 'N/A')
+                      .toString()
+                      .substring(0, 1)
+                      .toUpperCase(),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.deepPurple.shade700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  driver['name'] ?? 'Unknown Driver',
+                  style: const TextStyle(fontSize: 18),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildDetailRow('Email', driver['email'] ?? 'N/A'),
+                _buildDetailRow('Phone', driver['phoneNumber'] ?? 'N/A'),
+                _buildDetailRow('License ID', driver['licenseId'] ?? 'N/A'),
+                _buildDetailRow(
+                  'License Holder',
+                  driver['licenseHolderName'] ?? 'N/A',
+                ),
+                _buildDetailRow('State', driver['licenseState'] ?? 'N/A'),
+                _buildDetailRow('District', driver['licenseDistrict'] ?? 'N/A'),
+                _buildDetailRow(
+                  'Vehicle Class',
+                  driver['vehicleClass'] ?? 'N/A',
+                ),
+                _buildDetailRow('Car Model', driver['carModel'] ?? 'N/A'),
+                _buildDetailRow('Car Number', driver['carNumber'] ?? 'N/A'),
+                _buildDetailRow(
+                  'Status',
+                  (driver['isActive'] ?? false) ? 'Active' : 'Inactive',
+                ),
+                _buildDetailRow(
+                  'Approved',
+                  (driver['isApproved'] ?? false) ? 'Yes' : 'No',
+                ),
+                _buildDetailRow(
+                  'Online',
+                  (driver['isOnline'] ?? false) ? 'Yes' : 'No',
+                ),
+                _buildDetailRow(
+                  'Available',
+                  (driver['isAvailable'] ?? false) ? 'Yes' : 'No',
+                ),
+                _buildDetailRow('Rating', '${driver['rating'] ?? 0.0}'),
+                _buildDetailRow('Total Rides', '${driver['totalRides'] ?? 0}'),
+                _buildDetailRow(
+                  'Total Earnings',
+                  '₹${driver['totalEarnings'] ?? 0.0}',
+                ),
+                const SizedBox(height: 8),
+                const Divider(),
+                const SizedBox(height: 8),
+                // Police clearance section
+                _buildPoliceClearanceSection(driver['licenseId']),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+            if (driver['isApproved'] == true)
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _toggleDriverStatus(
+                    driver['id'],
+                    driver['isActive'] ?? false,
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: (driver['isActive'] ?? false)
+                      ? Colors.red
+                      : Colors.green,
+                ),
+                child: Text(
+                  (driver['isActive'] ?? false) ? 'Disable' : 'Enable',
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              '$label:',
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build police clearance section for driver details
+  Widget _buildPoliceClearanceSection(String? licenseId) {
+    if (licenseId == null || licenseId.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.security, color: Colors.grey.shade600, size: 18),
+              const SizedBox(width: 8),
+              const Text(
+                'Police Clearance',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.warning, color: Colors.orange.shade600, size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  'No license ID available for verification',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    final clearanceData = _policeClearanceData[licenseId];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.security, color: Colors.deepPurple.shade600, size: 18),
+            const SizedBox(width: 8),
+            const Text(
+              'Police Clearance',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1A1A2E),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (clearanceData == null)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  color: Colors.orange.shade600,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'No police clearance record found for this license',
+                    style: TextStyle(color: Colors.orange),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: clearanceData['police_clearance'] == true
+                  ? Colors.green.shade50
+                  : Colors.red.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: clearanceData['police_clearance'] == true
+                    ? Colors.green.shade200
+                    : Colors.red.shade200,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      clearanceData['police_clearance'] == true
+                          ? Icons.verified
+                          : Icons.warning,
+                      color: clearanceData['police_clearance'] == true
+                          ? Colors.green.shade600
+                          : Colors.red.shade600,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      clearanceData['police_clearance'] == true
+                          ? 'Verification Successful'
+                          : 'Verification Failed',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: clearanceData['police_clearance'] == true
+                            ? Colors.green.shade700
+                            : Colors.red.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _buildDetailRow(
+                  'Status',
+                  clearanceData['police_clearance'] == true
+                      ? 'Clear'
+                      : 'Issues Found',
+                ),
+                _buildDetailRow(
+                  'Clearance Date',
+                  clearanceData['clearance_date'] ?? 'N/A',
+                ),
+                _buildDetailRow(
+                  'Issuing Authority',
+                  clearanceData['issuing_authority'] ?? 'N/A',
+                ),
+                _buildDetailRow(
+                  'Valid Status',
+                  clearanceData['valid'] == true ? 'Valid' : 'Invalid',
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  // Build police clearance badge
+  Widget _buildPoliceClearanceBadge(String? licenseId) {
+    if (licenseId == null || licenseId.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          'No License',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey.shade600,
+          ),
+        ),
+      );
+    }
+
+    final clearanceData = _policeClearanceData[licenseId];
+
+    if (clearanceData == null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade100,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          'No Police Check',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: Colors.orange.shade700,
+          ),
+        ),
+      );
+    }
+
+    final isPoliceClearanceValid = clearanceData['police_clearance'] == true;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: isPoliceClearanceValid
+            ? Colors.green.shade100
+            : Colors.red.shade100,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isPoliceClearanceValid ? Icons.verified : Icons.warning,
+            size: 12,
+            color: isPoliceClearanceValid
+                ? Colors.green.shade700
+                : Colors.red.shade700,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            isPoliceClearanceValid ? 'Police Clear' : 'Police Issue',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: isPoliceClearanceValid
+                  ? Colors.green.shade700
+                  : Colors.red.shade700,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

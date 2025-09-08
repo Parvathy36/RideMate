@@ -209,6 +209,17 @@ class AuthService {
           );
       print('Display name updated');
 
+      // Send email verification
+      if (result.user != null && !result.user!.emailVerified) {
+        try {
+          await result.user!.sendEmailVerification();
+          print('Email verification sent to: $email');
+        } catch (e) {
+          print('Failed to send email verification: $e');
+          // Don't throw error as registration should still proceed
+        }
+      }
+
       // Create user document in Firestore
       try {
         if (isDriver) {

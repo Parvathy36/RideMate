@@ -42,6 +42,16 @@ class _InitializeLicensesPageState extends State<InitializeLicensesPage> {
         _statusMessage += '\n✅ Kerala sample licenses initialized successfully';
       });
 
+      // Initialize car data
+      setState(() {
+        _statusMessage += '\n🔄 Initializing sample car data...';
+      });
+
+      await LicenseValidationService.initializeSampleCars();
+      setState(() {
+        _statusMessage += '\n✅ Sample car data initialized successfully';
+      });
+
       // Debug Firestore access
       setState(() {
         _statusMessage += '\n🔄 Testing Firestore access...';
@@ -53,7 +63,12 @@ class _InitializeLicensesPageState extends State<InitializeLicensesPage> {
       });
 
       setState(() {
-        _statusMessage += '\n\n🎉 License database initialization completed successfully!';
+        _statusMessage +=
+            '\n\n🎉 License and car database initialization completed successfully!';
+        _statusMessage += '\n\n📋 Sample data added:';
+        _statusMessage += '\n• 15 Kerala driving licenses';
+        _statusMessage +=
+            '\n• 5 sample cars (KL01 AB 1234, KL05 AC 1234, TN9Z4321, MH20A1, DL8CAB9999)';
         _isInitialized = true;
       });
     } catch (e) {
@@ -146,7 +161,9 @@ class _InitializeLicensesPageState extends State<InitializeLicensesPage> {
                           height: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
                           ),
                         ),
                         SizedBox(width: 10),
@@ -189,7 +206,9 @@ class _InitializeLicensesPageState extends State<InitializeLicensesPage> {
                   color: _isInitialized ? Colors.green[50] : Colors.grey[100],
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: _isInitialized ? Colors.green[300]! : Colors.grey[300]!,
+                    color: _isInitialized
+                        ? Colors.green[300]!
+                        : Colors.grey[300]!,
                   ),
                 ),
                 child: SingleChildScrollView(
@@ -198,7 +217,9 @@ class _InitializeLicensesPageState extends State<InitializeLicensesPage> {
                     style: TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 12,
-                      color: _isInitialized ? Colors.green[800] : Colors.black87,
+                      color: _isInitialized
+                          ? Colors.green[800]
+                          : Colors.black87,
                     ),
                   ),
                 ),

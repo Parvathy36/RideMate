@@ -7,6 +7,7 @@ import 'home.dart';
 import 'admin.dart';
 import 'debug_page.dart';
 import 'driver_waiting_page.dart';
+import 'email_verification_page.dart';
 
 // Ultra Professional Google Logo Painter - Pixel Perfect & Authentic
 class GoogleLogoCustomPainter extends CustomPainter {
@@ -191,6 +192,8 @@ class _RegisterPageState extends State<RegisterPage> {
       false; // Toggle between user and driver registration
   bool _isValidatingLicense = false;
   String? _licenseHolderName;
+  bool _isValidatingCarNumber = false;
+  String? _carOwnerName;
   String? _selectedCarModel;
 
   // Car models list
@@ -366,7 +369,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
     // Check format using the service
     if (!LicenseValidationService.isValidCarNumberFormat(value)) {
-      return 'Invalid car number format. Use Kerala format: KLDD XX NNNN (e.g., KL01 AB 1234)';
+      return 'Invalid car number format. Use Indian format: SSRRXXNNNN (e.g., KL01AB1234, TN9Z4321, MH20A1)';
     }
 
     return null;
@@ -458,6 +461,84 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
+  Future<void> _validateCarNumberInDatabase() async {
+    if (!_isDriverRegistration || _carNumberController.text.isEmpty) return;
+
+    setState(() {
+      _isValidatingCarNumber = true;
+      _carOwnerName = null;
+    });
+
+    try {
+      final validationResult =
+          await LicenseValidationService.validateCarNumberDetailed(
+            _carNumberController.text.trim(),
+          );
+
+      setState(() {
+        _isValidatingCarNumber = false;
+        if (validationResult['isValid'] == true) {
+          final carData = validationResult['carData'] as Map<String, dynamic>;
+          _carOwnerName = carData['ownerName'];
+        } else {
+          _carOwnerName = null;
+        }
+      });
+
+      if (validationResult['isValid'] == true) {
+        final carData = validationResult['carData'] as Map<String, dynamic>;
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Car verified for ${carData['ownerName']} - ${carData['carModel']}',
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      } else {
+        final status = validationResult['status'];
+        String errorMessage = validationResult['message'] ?? 'Unknown error';
+
+        if (status == 'not_found') {
+          errorMessage = 'Car number not found in database.';
+        } else if (status == 'invalid') {
+          errorMessage = 'Car is not valid for registration.';
+        } else if (status == 'invalid_format') {
+          errorMessage =
+              'Invalid car number format. Use Indian format: SSRRXXNNNN';
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(errorMessage),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() {
+        _isValidatingCarNumber = false;
+        _carOwnerName = null;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error validating car number: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _registerWithEmail() async {
     if (!_formKey.currentState!.validate()) {
       setState(() {
@@ -466,12 +547,22 @@ class _RegisterPageState extends State<RegisterPage> {
       return;
     }
 
-    // For driver registration, validate license in database
+    // For driver registration, validate license and car number in database
     if (_isDriverRegistration) {
       if (_licenseHolderName == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Please validate your license ID first'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      if (_carOwnerName == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please validate your car number first'),
             backgroundColor: Colors.red,
           ),
         );
@@ -537,25 +628,23 @@ class _RegisterPageState extends State<RegisterPage> {
           SnackBar(
             content: Text(
               _isDriverRegistration
-                  ? 'Driver registration successful! Please wait for admin approval.'
-                  : 'Registration successful!',
+                  ? 'Driver registration successful! Please verify your email to continue.'
+                  : 'Registration successful! Please verify your email to continue.',
             ),
             backgroundColor: Colors.green,
           ),
         );
 
-        // Navigate based on user type
-        if (_isDriverRegistration) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const DriverWaitingPage()),
-          );
-        } else {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const HomePage()),
-          );
-        }
+        // Navigate to email verification page
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => EmailVerificationPage(
+              isDriver: _isDriverRegistration,
+              email: _emailController.text.trim(),
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -1287,13 +1376,36 @@ class _RegisterPageState extends State<RegisterPage> {
                           validator: _validateCarNumber,
                           textCapitalization: TextCapitalization.characters,
                           decoration: InputDecoration(
-                            hintText: 'Enter car number (e.g., KL01 AB 1234)',
+                            hintText: 'KL01AB1234, TN9Z4321, MH20A1',
                             hintStyle: TextStyle(color: Colors.grey.shade500),
                             prefixIcon: Icon(
                               Icons.confirmation_number_outlined,
                               color: Colors.grey.shade600,
                               size: 20,
                             ),
+                            suffixIcon: _isValidatingCarNumber
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  )
+                                : IconButton(
+                                    onPressed: _validateCarNumberInDatabase,
+                                    icon: Icon(
+                                      _carOwnerName != null
+                                          ? Icons.check_circle
+                                          : Icons.search,
+                                      color: _carOwnerName != null
+                                          ? Colors.green
+                                          : Colors.grey.shade600,
+                                      size: 20,
+                                    ),
+                                  ),
                             border: InputBorder.none,
                             contentPadding: const EdgeInsets.all(16),
                           ),

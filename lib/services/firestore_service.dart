@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'license_validation_service.dart';
 
 class FirestoreService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -11,208 +12,7 @@ class FirestoreService {
   static const String driversCollection = 'drivers';
   static const String licensesCollection = 'licenses';
   static const String validLicensesCollection = 'valid_licenses';
-
-  // Initialize Firestore with sample license data
-  static Future<void> initializeLicenseData() async {
-    try {
-      print('🔄 Initializing license data in Firestore...');
-
-      // Sample Kerala license data
-      final sampleLicenses = [
-        {
-          "licenseId": "KL01 20230000001",
-          "name": "Rajesh Kumar",
-          "state": "Kerala",
-          "district": "Thiruvananthapuram",
-          "issueDate": "2023-01-15",
-          "expiryDate": "2043-01-15",
-          "vehicleClass": "LMV",
-          "isActive": true,
-          "createdAt": FieldValue.serverTimestamp(),
-        },
-        {
-          "licenseId": "KL02 20230000002",
-          "name": "Priya Nair",
-          "state": "Kerala",
-          "district": "Kochi",
-          "issueDate": "2023-02-20",
-          "expiryDate": "2043-02-20",
-          "vehicleClass": "LMV",
-          "isActive": true,
-          "createdAt": FieldValue.serverTimestamp(),
-        },
-        {
-          "licenseId": "KL03 20230000003",
-          "name": "Arjun Krishnan",
-          "state": "Kerala",
-          "district": "Pathanamthitta",
-          "issueDate": "2023-03-10",
-          "expiryDate": "2043-03-10",
-          "vehicleClass": "LMV",
-          "isActive": true,
-          "createdAt": FieldValue.serverTimestamp(),
-        },
-        {
-          "licenseId": "KL04 20230000004",
-          "name": "Deepika R",
-          "state": "Kerala",
-          "district": "Ernakulam",
-          "issueDate": "2023-04-05",
-          "expiryDate": "2043-04-05",
-          "vehicleClass": "LMV",
-          "isActive": true,
-          "createdAt": FieldValue.serverTimestamp(),
-        },
-        {
-          "licenseId": "KL05 20230000005",
-          "name": "Viknesh K",
-          "state": "Kerala",
-          "district": "Kozhikode",
-          "issueDate": "2023-05-12",
-          "expiryDate": "2043-05-12",
-          "vehicleClass": "LMV",
-          "isActive": true,
-          "createdAt": FieldValue.serverTimestamp(),
-        },
-        {
-          "licenseId": "KL06 20230000006",
-          "name": "Neha M",
-          "state": "Kerala",
-          "district": "Kollam",
-          "issueDate": "2023-06-18",
-          "expiryDate": "2043-06-18",
-          "vehicleClass": "LMV",
-          "isActive": true,
-          "createdAt": FieldValue.serverTimestamp(),
-        },
-        {
-          "licenseId": "KL07 20230000007",
-          "name": "Amit S",
-          "state": "Kerala",
-          "district": "Pathanamthitta",
-          "issueDate": "2023-07-25",
-          "expiryDate": "2043-07-25",
-          "vehicleClass": "LMV",
-          "isActive": true,
-          "createdAt": FieldValue.serverTimestamp(),
-        },
-        {
-          "licenseId": "KL08 20230000008",
-          "name": "Rajeev M",
-          "state": "Kerala",
-          "district": "Thiruvananthapuram",
-          "issueDate": "2023-08-30",
-          "expiryDate": "2043-08-30",
-          "vehicleClass": "LMV",
-          "isActive": true,
-          "createdAt": FieldValue.serverTimestamp(),
-        },
-        {
-          "licenseId": "KL09 20230000009",
-          "name": "Sunita Mohan",
-          "state": "Kerala",
-          "district": "Kollam",
-          "issueDate": "2023-09-14",
-          "expiryDate": "2043-09-14",
-          "vehicleClass": "LMV",
-          "isActive": true,
-          "createdAt": FieldValue.serverTimestamp(),
-        },
-        {
-          "licenseId": "KL10 20230000010",
-          "name": "Harpreet S",
-          "state": "Kerala",
-          "district": "Kottayam",
-          "issueDate": "2023-10-08",
-          "expiryDate": "2043-10-08",
-          "vehicleClass": "LMV",
-          "isActive": true,
-          "createdAt": FieldValue.serverTimestamp(),
-        },
-        {
-          "licenseId": "KL11 20230000011",
-          "name": "Sourav S",
-          "state": "Kerala",
-          "district": "Kottayam",
-          "issueDate": "2023-11-22",
-          "expiryDate": "2043-11-22",
-          "vehicleClass": "LMV",
-          "isActive": true,
-          "createdAt": FieldValue.serverTimestamp(),
-        },
-        {
-          "licenseId": "KL12 20230000012",
-          "name": "Lakshmi R",
-          "state": "Kerala",
-          "district": "Pathanamthitta",
-          "issueDate": "2023-12-03",
-          "expiryDate": "2043-12-03",
-          "vehicleClass": "LMV",
-          "isActive": true,
-          "createdAt": FieldValue.serverTimestamp(),
-        },
-        {
-          "licenseId": "KL13 20240000013",
-          "name": "Kiran Kumar",
-          "state": "Kerala",
-          "district": "Kozhikode",
-          "issueDate": "2024-01-16",
-          "expiryDate": "2044-01-16",
-          "vehicleClass": "LMV",
-          "isActive": true,
-          "createdAt": FieldValue.serverTimestamp(),
-        },
-        {
-          "licenseId": "KL14 20240000014",
-          "name": "Bijay Mohan",
-          "state": "Kerala",
-          "district": "Thrissur",
-          "issueDate": "2024-02-28",
-          "expiryDate": "2044-02-28",
-          "vehicleClass": "LMV",
-          "isActive": true,
-          "createdAt": FieldValue.serverTimestamp(),
-        },
-        {
-          "licenseId": "KL15 20240000015",
-          "name": "Rahul Mohan",
-          "state": "Kerala",
-          "district": "Ernakulam",
-          "issueDate": "2024-03-11",
-          "expiryDate": "2044-03-11",
-          "vehicleClass": "LMV",
-          "isActive": true,
-          "createdAt": FieldValue.serverTimestamp(),
-        },
-      ];
-
-      // Check if licenses already exist
-      final existingLicenses = await _firestore
-          .collection(licensesCollection)
-          .limit(1)
-          .get();
-
-      if (existingLicenses.docs.isEmpty) {
-        // Use batch to add all licenses
-        final batch = _firestore.batch();
-
-        for (final license in sampleLicenses) {
-          final docRef = _firestore
-              .collection(licensesCollection)
-              .doc(license['licenseId'] as String);
-          batch.set(docRef, license);
-        }
-
-        await batch.commit();
-        print('✅ License data initialized successfully');
-      } else {
-        print('ℹ️ License data already exists');
-      }
-    } catch (e) {
-      print('❌ Error initializing license data: $e');
-      throw Exception('Failed to initialize license data: $e');
-    }
-  }
+  static const String carsCollection = 'cars';
 
   // Get license document without validation (for expiry checking)
   static Future<Map<String, dynamic>?> getLicenseDocument(
@@ -312,6 +112,58 @@ class FirestoreService {
     } catch (e) {
       print('❌ Error checking car number registration: $e');
       return false;
+    }
+  }
+
+  // Get car document from cars collection
+  static Future<Map<String, dynamic>?> getCarDocument(String carNumber) async {
+    try {
+      print('🔍 Getting car document: $carNumber');
+
+      // Get car document using car number as document ID
+      final docSnapshot = await _firestore
+          .collection(carsCollection)
+          .doc(carNumber.toUpperCase())
+          .get();
+
+      if (!docSnapshot.exists) {
+        print('❌ Car document not found');
+        return null;
+      }
+
+      return docSnapshot.data()!;
+    } catch (e) {
+      print('❌ Error getting car document: $e');
+      return null;
+    }
+  }
+
+  // Validate car number against cars collection
+  static Future<Map<String, dynamic>?> validateCarNumber(
+    String carNumber,
+  ) async {
+    try {
+      print('🔍 Validating car number: $carNumber');
+
+      // Get car document
+      final carData = await getCarDocument(carNumber);
+
+      if (carData == null) {
+        print('❌ Car not found in database');
+        return null;
+      }
+
+      // Check if car is valid
+      if (carData['isValid'] != true) {
+        print('❌ Car is not valid');
+        return null;
+      }
+
+      print('✅ Car is valid');
+      return carData;
+    } catch (e) {
+      print('❌ Error validating car number: $e');
+      return null;
     }
   }
 
@@ -422,6 +274,39 @@ class FirestoreService {
     } catch (e) {
       print('❌ Error updating driver approval: $e');
       throw Exception('Failed to update driver approval: $e');
+    }
+  }
+
+  // Update driver active status (enable/disable)
+  static Future<void> updateDriverStatus({
+    required String userId,
+    required bool isActive,
+    String? adminNotes,
+  }) async {
+    try {
+      final updateData = {
+        'isActive': isActive,
+        'isOnline': isActive ? false : false, // Set offline when disabled
+        'isAvailable': isActive
+            ? false
+            : false, // Set unavailable when disabled
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      if (adminNotes != null) {
+        updateData['adminNotes'] = adminNotes;
+      }
+
+      // Update both collections
+      await Future.wait([
+        _firestore.collection(usersCollection).doc(userId).update(updateData),
+        _firestore.collection(driversCollection).doc(userId).update(updateData),
+      ]);
+
+      print('✅ Driver status updated: ${isActive ? 'enabled' : 'disabled'}');
+    } catch (e) {
+      print('❌ Error updating driver status: $e');
+      throw Exception('Failed to update driver status: $e');
     }
   }
 
@@ -669,7 +554,7 @@ class FirestoreService {
       }
 
       // Initialize license data
-      await initializeLicenseData();
+      await LicenseValidationService.initializeLicensesCollection();
 
       // Initialize admin user
       await initializeAdminUser();
@@ -734,6 +619,63 @@ class FirestoreService {
     } catch (e) {
       print('❌ Error during Firestore debug: $e');
       rethrow;
+    }
+  }
+
+  // Check police clearance status for a driver by license ID
+  static Future<Map<String, dynamic>?> checkPoliceClearance(
+    String licenseId,
+  ) async {
+    try {
+      print('🔍 Checking police clearance for license: $licenseId');
+
+      final doc = await _firestore
+          .collection('policeclear')
+          .doc(licenseId)
+          .get();
+
+      if (doc.exists) {
+        final data = doc.data() as Map<String, dynamic>;
+        print('✅ Police clearance found: ${data['police_clearance']}');
+        return data;
+      } else {
+        print('⚠️ No police clearance record found for license: $licenseId');
+        return null;
+      }
+    } catch (e) {
+      print('❌ Error checking police clearance: $e');
+      return null;
+    }
+  }
+
+  // Get police clearance status for multiple drivers
+  static Future<Map<String, Map<String, dynamic>>> getPoliceClearanceForDrivers(
+    List<String> licenseIds,
+  ) async {
+    try {
+      print('🔍 Checking police clearance for ${licenseIds.length} drivers');
+
+      final Map<String, Map<String, dynamic>> clearanceData = {};
+
+      // Use batch get for better performance
+      for (final licenseId in licenseIds) {
+        final doc = await _firestore
+            .collection('policeclear')
+            .doc(licenseId)
+            .get();
+
+        if (doc.exists) {
+          clearanceData[licenseId] = doc.data() as Map<String, dynamic>;
+        }
+      }
+
+      print(
+        '✅ Found police clearance data for ${clearanceData.length} drivers',
+      );
+      return clearanceData;
+    } catch (e) {
+      print('❌ Error getting police clearance data: $e');
+      return {};
     }
   }
 }

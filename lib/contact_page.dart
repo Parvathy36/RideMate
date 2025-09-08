@@ -293,7 +293,7 @@ class _ContactPageState extends State<ContactPage> {
                         child: _buildContactCard(
                           icon: Icons.phone,
                           title: 'Phone',
-                          info: '+1 (555) 123-4567',
+                          info: '+91 95628 29536',
                           color: Colors.green,
                         ),
                       ),
@@ -302,7 +302,7 @@ class _ContactPageState extends State<ContactPage> {
                         child: _buildContactCard(
                           icon: Icons.email,
                           title: 'Email',
-                          info: 'support@ridemate.com',
+                          info: 'parvathysuresh36@gmail.com',
                           color: Colors.blue,
                         ),
                       ),
@@ -315,7 +315,7 @@ class _ContactPageState extends State<ContactPage> {
                         child: _buildContactCard(
                           icon: Icons.location_on,
                           title: 'Address',
-                          info: '123 Main St, City, State',
+                          info: '123 Main St, Thiruvalla, Kerala',
                           color: Colors.red,
                         ),
                       ),

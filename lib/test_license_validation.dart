@@ -52,7 +52,32 @@ class _TestLicenseValidationPageState extends State<TestLicenseValidationPage> {
       if (!isValidFormat) {
         setState(() {
           _testResults +=
-              '💡 Expected format: KLDD XX NNNN (e.g., KL01 AB 1234)\n';
+              '💡 Expected format: SSRRXXNNNN (e.g., KL01AB1234, TN9Z4321, MH20A1)\n';
+        });
+        return;
+      }
+
+      // Check if car exists in database
+      setState(() {
+        _testResults += '🔄 Checking car in database...\n';
+      });
+
+      final carData = await LicenseValidationService.validateCarNumber(
+        carNumber,
+      );
+      if (carData != null) {
+        setState(() {
+          _testResults += '✅ Car found in database!\n';
+          _testResults += '👤 Owner: ${carData['ownerName']}\n';
+          _testResults += '🚗 Model: ${carData['carModel']}\n';
+          _testResults += '📍 District: ${carData['district']}\n';
+          _testResults += '🏛️ State: ${carData['state']}\n';
+          _testResults +=
+              '✅ Valid: ${carData['isValid'] == true ? 'Yes' : 'No'}\n';
+        });
+      } else {
+        setState(() {
+          _testResults += '❌ Car not found in database\n';
         });
         return;
       }
@@ -239,40 +264,88 @@ class _TestLicenseValidationPageState extends State<TestLicenseValidationPage> {
       });
 
       final carNumberFormatTests = [
-        {
-          'carNumber': 'KL01 AB 1234',
-          'expected': true,
-          'description': 'Valid Kerala format',
-        },
-        {
-          'carNumber': 'KL14 XY 9999',
-          'expected': true,
-          'description': 'Valid Kerala format (district 14)',
-        },
-        {
-          'carNumber': 'KL1 AB 1234',
-          'expected': false,
-          'description': 'Missing district digit',
-        },
-        {
-          'carNumber': 'KL01 A 1234',
-          'expected': false,
-          'description': 'Single letter series',
-        },
-        {
-          'carNumber': 'KL01 AB 123',
-          'expected': false,
-          'description': 'Missing number digit',
-        },
-        {
-          'carNumber': 'TN01 AB 1234',
-          'expected': false,
-          'description': 'Wrong state code',
-        },
+        // Valid formats that should be accepted
         {
           'carNumber': 'KL01AB1234',
+          'expected': true,
+          'description': 'Valid Indian format (KL01AB1234)',
+        },
+        {
+          'carNumber': 'TN9Z4321',
+          'expected': true,
+          'description': 'Valid Indian format (TN9Z4321)',
+        },
+        {
+          'carNumber': 'MH20A1',
+          'expected': true,
+          'description': 'Valid Indian format (MH20A1)',
+        },
+        {
+          'carNumber': 'KL 01 AB 1234',
+          'expected': true,
+          'description': 'Valid with spaces',
+        },
+        {
+          'carNumber': 'tn9z4321',
+          'expected': true,
+          'description': 'Valid lowercase',
+        },
+        {
+          'carNumber': 'DL8CAB9999',
+          'expected': true,
+          'description': 'Valid Delhi format',
+        },
+        {
+          'carNumber': 'UP14BC5678',
+          'expected': true,
+          'description': 'Valid UP format',
+        },
+        {
+          'carNumber': 'GJ1A123',
+          'expected': true,
+          'description': 'Valid Gujarat format',
+        },
+        // Invalid formats that should be rejected
+        {
+          'carNumber': 'KLL01',
           'expected': false,
-          'description': 'Missing spaces',
+          'description': 'Too many letters at start',
+        },
+        {
+          'carNumber': '1234KL',
+          'expected': false,
+          'description': 'Numbers first',
+        },
+        {
+          'carNumber': 'ABCD12345',
+          'expected': false,
+          'description': 'Too many letters',
+        },
+        {'carNumber': 'KL', 'expected': false, 'description': 'Too short'},
+        {
+          'carNumber': '12345',
+          'expected': false,
+          'description': 'Only numbers',
+        },
+        {
+          'carNumber': 'ABCDE',
+          'expected': false,
+          'description': 'Only letters',
+        },
+        {
+          'carNumber': 'K1AB1234',
+          'expected': false,
+          'description': 'Only 1 letter for state',
+        },
+        {
+          'carNumber': 'KL01ABC12345',
+          'expected': false,
+          'description': 'Too many letters in series',
+        },
+        {
+          'carNumber': 'KL01AB12345',
+          'expected': false,
+          'description': 'Too many digits',
         },
       ];
 
@@ -386,7 +459,7 @@ class _TestLicenseValidationPageState extends State<TestLicenseValidationPage> {
               controller: _carNumberController,
               decoration: const InputDecoration(
                 labelText: 'Car Registration Number',
-                hintText: 'Enter car number (e.g., KL01 AB 1234)',
+                hintText: 'Enter car number (e.g., KL01AB1234, TN9Z4321)',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.confirmation_number_outlined),
               ),

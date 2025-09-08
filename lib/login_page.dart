@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'register_page.dart';
 import 'services/auth_service.dart';
+import 'services/firestore_service.dart';
 import 'home.dart';
 import 'admin.dart';
 import 'driver_waiting_page.dart';
+import 'driver_dashboard.dart';
+import 'email_verification_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -33,6 +37,13 @@ class _LoginPageState extends State<LoginPage> {
     try {
       print('🔍 Checking user type for navigation...');
 
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        print('❌ No current user found');
+        return;
+      }
+
+      // Get user type directly from Firestore
       final userType = await _authService.getUserType();
       print('📍 User type: $userType');
 
@@ -47,11 +58,25 @@ class _LoginPageState extends State<LoginPage> {
           );
           break;
         case 'driver':
-          print('🔄 Navigating to Driver waiting page...');
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const DriverWaitingPage()),
-          );
+          // Check if driver is approved
+          final userData = await FirestoreService.getUserData(currentUser.uid);
+          final isApproved = userData?['isApproved'] ?? false;
+
+          if (isApproved) {
+            print('🔄 Navigating to Driver Dashboard (approved)...');
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const DriverDashboard()),
+            );
+          } else {
+            print('🔄 Navigating to Driver Waiting page (not approved)...');
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const DriverWaitingPage(),
+              ),
+            );
+          }
           break;
         case 'user':
         default:

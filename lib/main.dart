@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'login_page.dart';
@@ -17,6 +18,7 @@ import 'firebase_test.dart';
 import 'driver_waiting_page.dart';
 import 'driver_dashboard.dart';
 import 'debug_page.dart';
+import 'email_verification_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -145,12 +147,21 @@ class AuthWrapper extends StatelessWidget {
                 print('📊 User data: $userData');
                 print('🏷️ userType: $userType');
 
+                // Route directly based on userType
                 if (userType == 'admin') {
                   print('➡️ Routing to AdminPage');
                   return const AdminPage();
                 } else if (userType == 'driver') {
-                  print('➡️ Routing to DriverWaitingPage');
-                  return const DriverWaitingPage();
+                  // Check if driver is approved
+                  final isApproved = userData['isApproved'] ?? false;
+
+                  if (isApproved) {
+                    print('➡️ Routing to DriverDashboard (approved)');
+                    return const DriverDashboard();
+                  } else {
+                    print('➡️ Routing to DriverWaitingPage (not approved)');
+                    return const DriverWaitingPage();
+                  }
                 } else {
                   print('➡️ Routing to HomePage');
                   return const HomePage();
