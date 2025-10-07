@@ -13,6 +13,7 @@ class FirestoreService {
   static const String licensesCollection = 'licenses';
   static const String validLicensesCollection = 'valid_licenses';
   static const String carsCollection = 'cars';
+  static const String ridesCollection = 'rides';
 
   // Get license document without validation (for expiry checking)
   static Future<Map<String, dynamic>?> getLicenseDocument(
@@ -36,6 +37,105 @@ class FirestoreService {
     } catch (e) {
       print('❌ Error getting license document: $e');
       return null;
+    }
+  }
+
+  // Create a new ride request in rides collection
+  static Future<String?> createRideRequest({
+    required String pickupAddress,
+    required String destinationAddress,
+    String? rideType,
+    Map<String, dynamic>? extra,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('User not signed in');
+      }
+
+      // Load basic user data for denormalization (fast listing in admin/driver UIs)
+      Map<String, dynamic>? userData;
+      try {
+        userData = await getUserData(user.uid);
+      } catch (_) {
+        userData = null;
+      }
+
+      final rideRef = _firestore.collection(ridesCollection).doc();
+      final rideData = <String, dynamic>{
+        'rideId': rideRef.id,
+        'riderId': user.uid,
+        'rider': {
+          'name': userData?['name'] ?? user.displayName ?? 'User',
+          'email': user.email,
+          'phoneNumber': userData?['phoneNumber'],
+          'userType': userData?['userType'] ?? 'user',
+        },
+        'pickupAddress': pickupAddress,
+        'destinationAddress': destinationAddress,
+        'rideType': rideType ?? 'Solo', // Default to Solo if not specified
+        // Coordinates can be filled later when resolved on map screen
+        'pickupLocation': null,
+        'destinationLocation': null,
+        'status':
+            'requested', // requested -> matched -> enroute -> completed/cancelled
+        'driverId': null,
+        'participants': [user.uid],
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      if (extra != null && extra.isNotEmpty) {
+        rideData.addAll(extra);
+      }
+
+      await rideRef.set(rideData);
+      return rideRef.id;
+    } catch (e) {
+      if (kIsWeb) {
+        print('❌ Error creating ride request: $e');
+      }
+      return null;
+    }
+  }
+
+  // Get a ride document by ID
+  static Future<Map<String, dynamic>?> getRideById(String rideId) async {
+    try {
+      final doc = await _firestore
+          .collection(ridesCollection)
+          .doc(rideId)
+          .get();
+      if (!doc.exists) return null;
+      return {'id': doc.id, ...doc.data()!};
+    } catch (e) {
+      print('❌ Error getting ride by id: $e');
+      return null;
+    }
+  }
+
+  // Update ride with resolved locations and optional summary
+  static Future<void> updateRideLocations({
+    required String rideId,
+    required Map<String, double> pickup,
+    required Map<String, double> destination,
+    Map<String, dynamic>? summary,
+  }) async {
+    try {
+      final update = <String, dynamic>{
+        'pickupLocation': GeoPoint(pickup['latitude']!, pickup['longitude']!),
+        'destinationLocation': GeoPoint(
+          destination['latitude']!,
+          destination['longitude']!,
+        ),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (summary != null) {
+        update['routeSummary'] = summary;
+      }
+      await _firestore.collection(ridesCollection).doc(rideId).update(update);
+    } catch (e) {
+      print('❌ Error updating ride locations: $e');
     }
   }
 
@@ -218,6 +318,7 @@ class FirestoreService {
         'totalRides': 0,
         'totalEarnings': 0.0,
         'profileImageUrl': '',
+        'licenseImageUrl': '',
         'documents': {
           'licenseVerified': false,
           'carRegistrationVerified': false,
@@ -257,11 +358,16 @@ class FirestoreService {
         'isApproved': isApproved,
         'isActive': isApproved, // Activate driver when approved
         'approvalDate': isApproved ? FieldValue.serverTimestamp() : null,
+        'rejectionDate': !isApproved ? FieldValue.serverTimestamp() : null,
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
       if (adminNotes != null) {
         updateData['adminNotes'] = adminNotes;
+        // Store rejection message separately for better tracking
+        if (!isApproved) {
+          updateData['rejectionMessage'] = adminNotes;
+        }
       }
 
       // Update both collections
@@ -271,6 +377,9 @@ class FirestoreService {
       ]);
 
       print('✅ Driver approval status updated');
+      if (!isApproved && adminNotes != null) {
+        print('📝 Rejection message stored: $adminNotes');
+      }
     } catch (e) {
       print('❌ Error updating driver approval: $e');
       throw Exception('Failed to update driver approval: $e');
@@ -346,6 +455,68 @@ class FirestoreService {
     }
   }
 
+  // Get all active drivers
+  static Future<List<Map<String, dynamic>>> getActiveDrivers() async {
+    try {
+      final querySnapshot = await _firestore
+          .collection(driversCollection)
+          .where('isActive', isEqualTo: true)
+          .orderBy('registrationDate', descending: true)
+          .get();
+
+      return querySnapshot.docs
+          .map((doc) => {'id': doc.id, ...doc.data()})
+          .toList();
+    } catch (e) {
+      print('❌ Error getting active drivers: $e');
+      return [];
+    }
+  }
+
+  // Get available drivers (both isActive: true and isApproved: true)
+  static Future<List<Map<String, dynamic>>> getAvailableDrivers() async {
+    try {
+      print('🔍 Fetching all drivers from collection...');
+
+      // Get all drivers from the collection
+      final querySnapshot = await _firestore
+          .collection(driversCollection)
+          .get();
+
+      print('📋 Total drivers in collection: ${querySnapshot.docs.length}');
+
+      // Filter drivers where both isActive and isApproved are true
+      final availableDrivers = <Map<String, dynamic>>[];
+
+      for (final doc in querySnapshot.docs) {
+        final data = doc.data();
+        final driverName = data['name'] ?? 'Unknown';
+        final isActive = data['isActive'];
+        final isApproved = data['isApproved'];
+
+        print('👤 Driver: $driverName (ID: ${doc.id})');
+        print('   - isActive: $isActive');
+        print('   - isApproved: $isApproved');
+
+        // Check if both isActive and isApproved are true
+        if (isActive == true && isApproved == true) {
+          print('   ✅ Driver is available!');
+          availableDrivers.add({'id': doc.id, ...data});
+        } else {
+          print('   ❌ Driver is not available');
+        }
+      }
+
+      print(
+        '📊 Found ${availableDrivers.length} available drivers out of ${querySnapshot.docs.length} total drivers',
+      );
+      return availableDrivers;
+    } catch (e) {
+      print('❌ Error getting available drivers: $e');
+      return [];
+    }
+  }
+
   // Get all drivers (both pending and approved)
   static Future<List<Map<String, dynamic>>> getAllDrivers() async {
     try {
@@ -359,6 +530,49 @@ class FirestoreService {
           .toList();
     } catch (e) {
       print('❌ Error getting all drivers: $e');
+      return [];
+    }
+  }
+
+  // Get all drivers with detailed status information for debugging
+  static Future<List<Map<String, dynamic>>> getAllDriversWithStatus() async {
+    try {
+      print('🔍 Fetching all drivers with status information...');
+
+      final querySnapshot = await _firestore
+          .collection(driversCollection)
+          .get();
+
+      final allDrivers = <Map<String, dynamic>>[];
+
+      for (final doc in querySnapshot.docs) {
+        final data = doc.data();
+        final driverInfo = {
+          'id': doc.id,
+          'name': data['name'] ?? 'Unknown',
+          'carModel': data['carModel'] ?? 'Unknown',
+          'carNumber': data['carNumber'] ?? 'Unknown',
+          'isActive': data['isActive'] ?? false,
+          'isApproved': data['isApproved'] ?? false,
+          'isOnline': data['isOnline'] ?? false,
+          'isAvailable': data['isAvailable'] ?? false,
+          'rating': data['rating'] ?? 0.0,
+          ...data,
+        };
+
+        allDrivers.add(driverInfo);
+
+        print('👤 ${driverInfo['name']} (${driverInfo['carModel']})');
+        print('   - isActive: ${driverInfo['isActive']}');
+        print('   - isApproved: ${driverInfo['isApproved']}');
+        print('   - isOnline: ${driverInfo['isOnline']}');
+        print('   - isAvailable: ${driverInfo['isAvailable']}');
+      }
+
+      print('📊 Total drivers found: ${allDrivers.length}');
+      return allDrivers;
+    } catch (e) {
+      print('❌ Error getting all drivers with status: $e');
       return [];
     }
   }
@@ -420,6 +634,39 @@ class FirestoreService {
     } catch (e) {
       print('❌ Error getting user data: $e');
       return null;
+    }
+  }
+
+  // Get users by userType (e.g., 'user', 'admin', 'driver')
+  static Future<List<Map<String, dynamic>>> getUsersByType(
+    String userType,
+  ) async {
+    try {
+      final querySnapshot = await _firestore
+          .collection(usersCollection)
+          .where('userType', isEqualTo: userType)
+          // Removed orderBy to avoid composite index requirement; we'll sort client-side
+          .get();
+
+      final users = querySnapshot.docs
+          .map((doc) => {'id': doc.id, ...doc.data()})
+          .toList();
+
+      // Sort by createdAt descending if available
+      users.sort((a, b) {
+        final at = a['createdAt'];
+        final bt = b['createdAt'];
+        if (at is Timestamp && bt is Timestamp) {
+          return bt.compareTo(at);
+        }
+        return 0;
+      });
+
+      print('👥 Loaded users of type "$userType": ${users.length}');
+      return users;
+    } catch (e) {
+      print('❌ Error getting users by type: $e');
+      return [];
     }
   }
 

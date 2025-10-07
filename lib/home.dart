@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'services/auth_service.dart';
+import 'map_screen.dart';
+import 'services/firestore_service.dart';
+import 'package:flutter/foundation.dart';
+// Removed google_place to avoid http version conflict
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -14,6 +18,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
   final AuthService _authService = AuthService();
+  final TextEditingController _pickupController = TextEditingController();
+  final TextEditingController _destinationController = TextEditingController();
+  // Autocomplete for web removed; simple text fields are used
+  String _selectedRideType = 'Solo'; // Default to Solo
 
   @override
   void initState() {
@@ -39,12 +47,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     // Start animations
     _fadeController.forward();
     _slideController.forward();
+
+    // Initialize Places for web (optional)
+    // Web Places autocomplete removed
   }
 
   @override
   void dispose() {
     _fadeController.dispose();
     _slideController.dispose();
+    _pickupController.dispose();
+    _destinationController.dispose();
     super.dispose();
   }
 
@@ -63,6 +76,289 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
+  // Fetch available drivers from Firestore
+  Future<List<Driver>> _getAvailableDrivers() async {
+    try {
+      final driversData = await FirestoreService.getAvailableDrivers();
+      return driversData.map((data) => Driver.fromFirestore(data)).toList();
+    } catch (e) {
+      print('Error fetching drivers: $e');
+      // Return empty list on error
+      return [];
+    }
+  }
+
+  double _calculateFare(Driver driver) {
+    return driver.baseFare + (driver.distance * driver.perKmRate);
+  }
+
+  Widget _buildAvailableDriversList() {
+    return FutureBuilder<List<Driver>>(
+      future: _getAvailableDrivers(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: CircularProgressIndicator(color: Colors.deepPurple),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Failed to load drivers',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Please try again later',
+                    style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final drivers = snapshot.data ?? [];
+
+        if (drivers.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.local_taxi_outlined,
+                    color: Colors.grey,
+                    size: 48,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No drivers available',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Please try again later',
+                    style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: drivers
+                .map((driver) => _buildDriverCard(driver))
+                .toList(),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDriverCard(Driver driver) {
+    final fare = _calculateFare(driver);
+
+    return Container(
+      width: 280,
+      margin: const EdgeInsets.only(right: 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        border: Border.all(color: Colors.grey.shade200, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.deepPurple.withValues(alpha: 0.1),
+                ),
+                child: const Icon(
+                  Icons.person,
+                  color: Colors.deepPurple,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      driver.name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1A1A2E),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.star, color: Colors.amber, size: 16),
+                        const SizedBox(width: 4),
+                        Text(
+                          driver.rating.toString(),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Car Model',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      driver.carModel,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1A1A2E),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Distance',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      '${driver.distance.toStringAsFixed(1)} km',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1A1A2E),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Fare',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      '₹${fare.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.deepPurple,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                // Handle driver selection
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Selected ${driver.name} - ${driver.carModel}',
+                    ),
+                    backgroundColor: Colors.deepPurple,
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: 0,
+              ),
+              child: const Text(
+                'Select Driver',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Autocomplete dialog removed
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
@@ -71,7 +367,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        automaticallyImplyLeading: false,
+        automaticallyImplyLeading: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+        ),
         title: LayoutBuilder(
           builder: (context, constraints) {
             final screenWidth = MediaQuery.of(context).size.width;
@@ -407,6 +709,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                       ),
                                     ),
                                     child: TextField(
+                                      controller: _pickupController,
+                                      readOnly: false,
+                                      onTap: null,
                                       decoration: InputDecoration(
                                         labelText: 'Pickup location',
                                         labelStyle: TextStyle(
@@ -417,6 +722,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                           color: Colors.deepPurple,
                                           size: 20,
                                         ),
+                                        suffixIcon: null,
                                         border: InputBorder.none,
                                         contentPadding: const EdgeInsets.all(
                                           16,
@@ -435,6 +741,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                       ),
                                     ),
                                     child: TextField(
+                                      controller: _destinationController,
+                                      readOnly: false,
+                                      onTap: null,
                                       decoration: InputDecoration(
                                         labelText: 'Where to?',
                                         labelStyle: TextStyle(
@@ -445,12 +754,47 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                           color: Colors.amber,
                                           size: 20,
                                         ),
+                                        suffixIcon: null,
                                         border: InputBorder.none,
                                         contentPadding: const EdgeInsets.all(
                                           16,
                                         ),
                                       ),
                                     ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  // Ride Type Selection
+                                  const Text(
+                                    'Choose your ride type',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF1A1A2E),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: _buildRideTypeOption(
+                                          'Solo',
+                                          Icons.person,
+                                          'Private ride for you',
+                                          Colors.deepPurple,
+                                          _selectedRideType == 'Solo',
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: _buildRideTypeOption(
+                                          'Pooling',
+                                          Icons.people,
+                                          'Share ride, save money',
+                                          Colors.amber,
+                                          _selectedRideType == 'Pooling',
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                   const SizedBox(height: 24),
                                   Container(
@@ -475,15 +819,62 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                       ],
                                     ),
                                     child: ElevatedButton(
-                                      onPressed: () {
-                                        // Add ride booking functionality here
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Ride booking feature coming soon!',
+                                      onPressed: () async {
+                                        final pickup = _pickupController.text
+                                            .trim();
+                                        final destination =
+                                            _destinationController.text.trim();
+                                        if (pickup.isEmpty ||
+                                            destination.isEmpty) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Please enter both pickup and destination',
+                                              ),
                                             ),
+                                          );
+                                          return;
+                                        }
+                                        // Create ride request in Firestore
+                                        String? rideId;
+                                        try {
+                                          rideId =
+                                              await FirestoreService.createRideRequest(
+                                                pickupAddress: pickup,
+                                                destinationAddress: destination,
+                                                rideType: _selectedRideType,
+                                              );
+                                          if (rideId == null) {
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  'Failed to create ride. Try again.',
+                                                ),
+                                              ),
+                                            );
+                                            return;
+                                          }
+                                        } catch (e) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                'Error creating ride: $e',
+                                              ),
+                                            ),
+                                          );
+                                          return;
+                                        }
+                                        // rideId is non-null here; navigation proceeds
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                MapScreen(rideId: rideId!),
                                           ),
                                         );
                                       },
@@ -649,6 +1040,32 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               ),
             ),
 
+            // Available Drivers Section
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                border: Border(
+                  top: BorderSide(color: Colors.grey.shade200, width: 1),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Available Drivers',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A1A2E),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _buildAvailableDriversList(),
+                ],
+              ),
+            ),
+
             // Footer
             Container(
               padding: const EdgeInsets.all(40),
@@ -761,6 +1178,77 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
       ),
     ];
+  }
+
+  // Helper method for ride type option
+  Widget _buildRideTypeOption(
+    String title,
+    IconData icon,
+    String description,
+    Color color,
+    bool isSelected,
+  ) {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedRideType = title;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? color.withValues(alpha: 0.1)
+              : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? color : Colors.grey.shade300,
+            width: isSelected ? 2 : 1,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: color.withValues(alpha: 0.2),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: isSelected ? color : Colors.grey.shade300,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                color: isSelected ? Colors.white : Colors.grey.shade600,
+                size: 20,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? color : Colors.grey.shade700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              description,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // Helper method for responsive action buttons (Profile and Logout)
@@ -1220,6 +1708,84 @@ class _ModernFeatureCardState extends State<ModernFeatureCard>
           );
         },
       ),
+    );
+  }
+}
+
+// Driver model class
+class Driver {
+  final String name;
+  final String carModel;
+  final String carNumber;
+  final double rating;
+  final double distance; // in kilometers
+  final double baseFare;
+  final double perKmRate;
+  final String? imageUrl;
+  final String? userId;
+  final String? email;
+  final String? phoneNumber;
+
+  Driver({
+    required this.name,
+    required this.carModel,
+    required this.carNumber,
+    required this.rating,
+    required this.distance,
+    required this.baseFare,
+    required this.perKmRate,
+    this.imageUrl,
+    this.userId,
+    this.email,
+    this.phoneNumber,
+  });
+
+  // Constructor to create Driver from Firestore data
+  factory Driver.fromFirestore(Map<String, dynamic> data) {
+    // Calculate distance based on current location (simplified for demo)
+    // In real app, you would calculate distance from user's location
+    final rating = (data['rating'] as num?)?.toDouble() ?? 0.0;
+    final distance = (data['distance'] as num?)?.toDouble() ?? (2.0 + rating);
+
+    // Calculate fare based on car model
+    double baseFare = 50.0;
+    double perKmRate = 12.0;
+
+    final carModel = (data['carModel'] as String?) ?? 'Unknown';
+    switch (carModel.toLowerCase()) {
+      case 'honda city':
+        baseFare = 60.0;
+        perKmRate = 15.0;
+        break;
+      case 'toyota innova':
+        baseFare = 80.0;
+        perKmRate = 18.0;
+        break;
+      case 'hyundai creta':
+        baseFare = 70.0;
+        perKmRate = 16.0;
+        break;
+      case 'maruti swift':
+        baseFare = 50.0;
+        perKmRate = 12.0;
+        break;
+      default:
+        baseFare = 60.0;
+        perKmRate = 14.0;
+    }
+
+    return Driver(
+      name: data['name'] as String? ?? 'Unknown Driver',
+      carModel: carModel,
+      carNumber: data['carNumber'] as String? ?? 'Unknown',
+      rating: (data['rating'] as num?)?.toDouble() ?? 4.5,
+      distance: distance,
+      baseFare: baseFare,
+      perKmRate: perKmRate,
+      imageUrl: data['profileImageUrl'] as String?,
+      userId: data['id'] as String?,
+      email: data['email'] as String?,
+      phoneNumber: data['phoneNumber'] as String?,
     );
   }
 }

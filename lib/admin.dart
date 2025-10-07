@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'services/auth_service.dart';
 import 'services/firestore_service.dart';
+import 'services/admin_service.dart';
 import 'login_page.dart';
 
 class AdminPage extends StatefulWidget {
@@ -23,6 +24,13 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
   List<Map<String, dynamic>> _approvedDrivers = [];
   List<Map<String, dynamic>> _filteredDrivers = [];
   bool _isLoadingDrivers = true;
+
+  // System stats data
+  int _totalUsers = 0;
+  int _totalDrivers = 0;
+  int _approvedDriversCount = 0;
+  int _pendingDriversCount = 0;
+  bool _isLoadingStats = true;
 
   // Police clearance data
   Map<String, Map<String, dynamic>> _policeClearanceData = {};
@@ -81,7 +89,7 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
       // Get all drivers from Firestore
       final allDrivers = await FirestoreService.getAllDrivers();
       final pendingDrivers = await FirestoreService.getPendingDrivers();
-      final approvedDrivers = await FirestoreService.getApprovedDrivers();
+      final approvedDrivers = await FirestoreService.getActiveDrivers();
 
       // Get police clearance data for all drivers
       final licenseIds = allDrivers
@@ -517,14 +525,235 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
     );
   }
 
-  // Users content
+  // Users content - shows all users (userType: 'user') from Firestore
   Widget _buildUsersContent() {
-    return const Center(
-      child: Text(
-        'Users Management\nComing Soon...',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 18, color: Colors.grey),
-      ),
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: FirestoreService.getUsersByType('user'),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Error loading users: ${snapshot.error}',
+              style: const TextStyle(color: Colors.red),
+            ),
+          );
+        }
+        final users = snapshot.data ?? [];
+        if (users.isEmpty) {
+          return const Center(
+            child: Text(
+              'No users found',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+          );
+        }
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    topRight: Radius.circular(16),
+                  ),
+                  border: Border(
+                    bottom: BorderSide(color: Colors.grey.shade200, width: 1),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.deepPurple,
+                            Colors.deepPurple.shade700,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.people,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Users',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1A1A2E),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${users.length} users, ${_allDrivers.length} drivers',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // List
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: users.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final user = users[index];
+                    final name = (user['name'] ?? 'User').toString();
+                    final email = (user['email'] ?? '').toString();
+                    final phone = (user['phoneNumber'] ?? '').toString();
+                    final createdAt = user['createdAt'];
+
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: Colors.deepPurple.shade100,
+                            child: Icon(
+                              Icons.person,
+                              color: Colors.deepPurple.shade600,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.email,
+                                      size: 14,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        email,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey[700],
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (phone.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.phone,
+                                        size: 14,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        phone,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Text(
+                                  'user',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blue,
+                                  ),
+                                ),
+                              ),
+                              if (createdAt != null) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Joined',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -950,44 +1179,63 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
 
   // Build stats cards for dashboard
   Widget _buildStatsCards() {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildStatCard(
-            'Total Users',
-            '1,234',
-            Icons.people,
-            Colors.deepPurple,
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _buildStatCard(
-            'Active Drivers',
-            '${_approvedDrivers.length}',
-            Icons.local_taxi,
-            Colors.green,
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _buildStatCard(
-            'Pending Approvals',
-            '${_pendingDrivers.length}',
-            Icons.pending,
-            Colors.orange,
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _buildStatCard(
-            'Total Rides',
-            '5,678',
-            Icons.directions_car,
-            Colors.deepPurple.shade400,
-          ),
-        ),
-      ],
+    return FutureBuilder<List<dynamic>>(
+      future: Future.wait([
+        FirestoreService.getUsersByType('user'),
+        FirestoreService.getActiveDrivers(),
+        FirestoreService.getPendingDrivers(),
+      ]),
+      builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final users = snapshot.data?[0] as List<Map<String, dynamic>>? ?? [];
+        final approvedDrivers =
+            snapshot.data?[1] as List<Map<String, dynamic>>? ?? [];
+        final pendingDrivers =
+            snapshot.data?[2] as List<Map<String, dynamic>>? ?? [];
+
+        return Row(
+          children: [
+            Expanded(
+              child: _buildStatCard(
+                'Total Users',
+                '${users.length}',
+                Icons.people,
+                Colors.deepPurple,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _buildStatCard(
+                'Active Drivers',
+                '${approvedDrivers.length}',
+                Icons.local_taxi,
+                Colors.green,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _buildStatCard(
+                'Pending Approvals',
+                '${pendingDrivers.length}',
+                Icons.pending,
+                Colors.orange,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _buildStatCard(
+                'Total Rides',
+                '0',
+                Icons.directions_car,
+                Colors.deepPurple.shade400,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1288,20 +1536,34 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
                   ),
                 ),
               ),
-              if (isPending) ...[
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      onPressed: () => _approveDriver(driver['id']),
-                      icon: const Icon(
-                        Icons.check,
-                        color: Colors.green,
-                        size: 20,
+              const SizedBox(height: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_policeClearanceData[driver['licenseId']]?['police_clearance'] ==
+                      true) ...[
+                    if (!(driver['isApproved'] ?? false)) ...[
+                      IconButton(
+                        onPressed: () => _approveDriver(driver['id']),
+                        icon: const Icon(
+                          Icons.check,
+                          color: Colors.green,
+                          size: 20,
+                        ),
+                        tooltip: 'Approve',
                       ),
-                      tooltip: 'Approve',
-                    ),
+                    ],
+                    if ((driver['isApproved'] ?? false) &&
+                        _driverHasAnyImage(driver))
+                      IconButton(
+                        onPressed: () => _showDriverImages(driver),
+                        icon: const Icon(
+                          Icons.image_outlined,
+                          color: Colors.purple,
+                          size: 20,
+                        ),
+                        tooltip: 'View Images',
+                      ),
                     IconButton(
                       onPressed: () => _rejectDriver(driver['id']),
                       icon: const Icon(
@@ -1310,31 +1572,6 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
                         size: 20,
                       ),
                       tooltip: 'Reject',
-                    ),
-                  ],
-                ),
-              ] else ...[
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      onPressed: () => _toggleDriverStatus(
-                        driver['id'],
-                        driver['isActive'] ?? false,
-                      ),
-                      icon: Icon(
-                        (driver['isActive'] ?? false)
-                            ? Icons.block
-                            : Icons.check_circle,
-                        color: (driver['isActive'] ?? false)
-                            ? Colors.red
-                            : Colors.green,
-                        size: 20,
-                      ),
-                      tooltip: (driver['isActive'] ?? false)
-                          ? 'Disable'
-                          : 'Enable',
                     ),
                     IconButton(
                       onPressed: () => _showDriverDetails(driver),
@@ -1345,9 +1582,40 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
                       ),
                       tooltip: 'View Details',
                     ),
+                  ] else if (_policeClearanceData[driver['licenseId']]?['police_clearance'] ==
+                      false) ...[
+                    IconButton(
+                      onPressed: () => _rejectDriver(driver['id']),
+                      icon: const Icon(
+                        Icons.close,
+                        color: Colors.red,
+                        size: 20,
+                      ),
+                      tooltip: 'Reject',
+                    ),
+                    if ((driver['isApproved'] ?? false) &&
+                        _driverHasAnyImage(driver))
+                      IconButton(
+                        onPressed: () => _showDriverImages(driver),
+                        icon: const Icon(
+                          Icons.image_outlined,
+                          color: Colors.purple,
+                          size: 20,
+                        ),
+                        tooltip: 'View Images',
+                      ),
+                    IconButton(
+                      onPressed: () => _showDriverDetails(driver),
+                      icon: const Icon(
+                        Icons.info_outline,
+                        color: Colors.blue,
+                        size: 20,
+                      ),
+                      tooltip: 'View Details',
+                    ),
                   ],
-                ),
-              ],
+                ],
+              ),
             ],
           ),
         ],
@@ -1386,17 +1654,25 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
   }
 
   Future<void> _rejectDriver(String driverId) async {
+    // Show rejection message dialog
+    final String? rejectionMessage = await _showRejectionMessageDialog();
+    
+    if (rejectionMessage == null) {
+      // User cancelled the dialog
+      return;
+    }
+
     try {
       await FirestoreService.updateDriverApprovalStatus(
         userId: driverId,
         isApproved: false,
-        adminNotes: 'Rejected by admin',
+        adminNotes: rejectionMessage,
       );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Driver rejected'),
+          SnackBar(
+            content: Text('Driver rejected: $rejectionMessage'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -1413,6 +1689,77 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
         );
       }
     }
+  }
+
+  Future<String?> _showRejectionMessageDialog() async {
+    final TextEditingController messageController = TextEditingController();
+    
+    return showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.warning, color: Colors.red.shade600),
+              const SizedBox(width: 8),
+              const Text('Reject Driver'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Please provide a reason for rejecting this driver:',
+                style: TextStyle(fontSize: 14, color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: messageController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Enter rejection reason...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: Colors.red.shade300),
+                  ),
+                ),
+                autofocus: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final message = messageController.text.trim();
+                if (message.isNotEmpty) {
+                  Navigator.of(context).pop(message);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please enter a rejection reason'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Reject'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _toggleDriverStatus(String driverId, bool currentStatus) async {
@@ -1549,6 +1896,47 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
                   'Total Earnings',
                   '₹${driver['totalEarnings'] ?? 0.0}',
                 ),
+                // Show rejection message if driver was rejected
+                if (!(driver['isApproved'] ?? false) && driver['rejectionMessage'] != null) ...[
+                  const SizedBox(height: 8),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.warning, color: Colors.red.shade600, size: 18),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Rejection Reason',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          driver['rejectionMessage'],
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.red.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 const Divider(),
                 const SizedBox(height: 8),
@@ -1580,6 +1968,112 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
                   (driver['isActive'] ?? false) ? 'Disable' : 'Enable',
                 ),
               ),
+          ],
+        );
+      },
+    );
+  }
+
+  bool _driverHasAnyImage(Map<String, dynamic> driver) {
+    final String profile = (driver['profileImageUrl'] ?? '').toString();
+    final String license = (driver['licenseImageUrl'] ?? '').toString();
+    return profile.isNotEmpty || license.isNotEmpty;
+  }
+
+  void _showDriverImages(Map<String, dynamic> driver) {
+    final String profileUrl = (driver['profileImageUrl'] ?? '').toString();
+    final String licenseUrl = (driver['licenseImageUrl'] ?? '').toString();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.image_outlined, color: Colors.purple),
+              const SizedBox(width: 8),
+              const Text('Driver Images'),
+            ],
+          ),
+          content: SizedBox(
+            width: 600,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Profile Image',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[800],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    constraints: const BoxConstraints(maxHeight: 300),
+                    child: profileUrl.isNotEmpty
+                        ? InteractiveViewer(
+                            child: Image.network(
+                              profileUrl,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) => const Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Text('Failed to load profile image'),
+                              ),
+                            ),
+                          )
+                        : const Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Text('No profile image uploaded'),
+                          ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'License Image',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[800],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    constraints: const BoxConstraints(maxHeight: 300),
+                    child: licenseUrl.isNotEmpty
+                        ? InteractiveViewer(
+                            child: Image.network(
+                              licenseUrl,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) => const Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Text('Failed to load license image'),
+                              ),
+                            ),
+                          )
+                        : const Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Text('No license image uploaded'),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
           ],
         );
       },

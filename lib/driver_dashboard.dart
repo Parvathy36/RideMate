@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/auth_service.dart';
 import 'login_page.dart';
+import 'widgets/driver_image_upload_dialog.dart';
 
 class DriverDashboard extends StatefulWidget {
   const DriverDashboard({super.key});
@@ -20,6 +21,8 @@ class _DriverDashboardState extends State<DriverDashboard>
   Map<String, dynamic>? _driverData;
   bool _isLoading = true;
   bool _isOnline = false;
+  bool _hasShownImageUploadDialog = false;
+  int _navIndex = 0;
 
   @override
   void initState() {
@@ -42,6 +45,197 @@ class _DriverDashboardState extends State<DriverDashboard>
     _loadDriverData();
   }
 
+  Widget _buildQuickActionsRail({required bool extended}) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF12122A), Color(0xFF0F0F23)],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black54,
+            blurRadius: 16,
+            offset: Offset(4, 0),
+          ),
+        ],
+      ),
+      child: NavigationRail(
+        backgroundColor: Colors.transparent,
+        extended: extended,
+        selectedIndex: _navIndex,
+        onDestinationSelected: (index) {
+          setState(() => _navIndex = index);
+          switch (index) {
+            case 0:
+              _showFeatureDialog('View Rides');
+              break;
+            case 1:
+              _showFeatureDialog('Earnings');
+              break;
+            case 2:
+              _showImageUploadDialog();
+              break;
+            case 3:
+              _showFeatureDialog('Profile');
+              break;
+          }
+        },
+        leading: Padding(
+          padding: const EdgeInsets.only(top: 14, left: 8, right: 8),
+          child: extended
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'RideMate Driver',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Welcome, ${_driverData?['name'] ?? 'Driver'}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Builder(
+                      builder: (context) {
+                        final bool isApproved =
+                            _driverData?['isApproved'] == true;
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isApproved
+                                ? Colors.green.withValues(alpha: 0.2)
+                                : Colors.orange.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: isApproved
+                                  ? Colors.green.withValues(alpha: 0.3)
+                                  : Colors.orange.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isApproved
+                                    ? Icons.verified
+                                    : Icons.hourglass_top,
+                                size: 14,
+                                color: isApproved
+                                    ? Colors.green
+                                    : Colors.orange,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                isApproved ? 'Approved' : 'Pending',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isApproved
+                                      ? Colors.green
+                                      : Colors.orange,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 56,
+                      height: 1,
+                      color: Colors.white.withValues(alpha: 0.12),
+                    ),
+                  ],
+                )
+              : Column(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.06),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          width: 1,
+                        ),
+                      ),
+                      child: const Icon(Icons.flash_on, color: Colors.amber),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      width: 36,
+                      height: 1,
+                      color: Colors.white.withValues(alpha: 0.12),
+                    ),
+                  ],
+                ),
+        ),
+        trailing: Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: IconButton(
+            tooltip: 'Sign out',
+            onPressed: _signOut,
+            icon: const Icon(Icons.logout, color: Colors.white70),
+          ),
+        ),
+        groupAlignment: -0.75,
+        labelType: extended
+            ? NavigationRailLabelType.none
+            : NavigationRailLabelType.all,
+        minWidth: 72,
+        minExtendedWidth: 240,
+        useIndicator: true,
+        indicatorColor: Colors.white.withValues(alpha: 0.10),
+        indicatorShape: const StadiumBorder(),
+        selectedIconTheme: const IconThemeData(color: Colors.white),
+        unselectedIconTheme: const IconThemeData(color: Colors.white70),
+        selectedLabelTextStyle: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelTextStyle: const TextStyle(color: Colors.white70),
+        destinations: const [
+          NavigationRailDestination(
+            icon: Icon(Icons.list_alt),
+            selectedIcon: Icon(Icons.list_alt),
+            label: Text('Rides'),
+          ),
+          NavigationRailDestination(
+            icon: Icon(Icons.account_balance_wallet_outlined),
+            selectedIcon: Icon(Icons.account_balance_wallet),
+            label: Text('Earnings'),
+          ),
+          NavigationRailDestination(
+            icon: Icon(Icons.photo_camera_outlined),
+            selectedIcon: Icon(Icons.photo_camera),
+            label: Text('Upload'),
+          ),
+          NavigationRailDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: Text('Profile'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _fadeController.dispose();
@@ -52,19 +246,37 @@ class _DriverDashboardState extends State<DriverDashboard>
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        final doc = await FirebaseFirestore.instance
+        final usersRef = FirebaseFirestore.instance
             .collection('users')
-            .doc(user.uid)
-            .get();
+            .doc(user.uid);
+        final driversRef = FirebaseFirestore.instance
+            .collection('drivers')
+            .doc(user.uid);
 
-        if (doc.exists) {
-          final data = doc.data()!;
-          setState(() {
-            _driverData = data;
-            _isOnline = data['isOnline'] ?? false;
-            _isLoading = false;
-          });
-        }
+        // Fetch user and driver docs in parallel
+        final snapshots = await Future.wait([usersRef.get(), driversRef.get()]);
+        final userDoc = snapshots[0];
+        final driverDoc = snapshots[1];
+
+        // Merge data (driver doc takes precedence for driver-specific fields)
+        final merged = <String, dynamic>{};
+        if (userDoc.exists) merged.addAll(userDoc.data()!);
+        if (driverDoc.exists) merged.addAll(driverDoc.data()!);
+
+        setState(() {
+          _driverData = merged.isNotEmpty ? merged : null;
+          _isOnline =
+              (merged['isOnline'] ?? userDoc.data()?['isOnline'] ?? false)
+                  as bool;
+          _isLoading = false;
+        });
+
+        // Check if driver needs to upload images using merged data
+        _checkAndShowImageUploadDialog(merged);
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
       }
     } catch (e) {
       print('Error loading driver data: $e');
@@ -180,7 +392,19 @@ class _DriverDashboardState extends State<DriverDashboard>
             ? const Center(
                 child: CircularProgressIndicator(color: Colors.amber),
               )
-            : _buildDashboardContent(),
+            : LayoutBuilder(
+                builder: (context, constraints) {
+                  final bool isWide = constraints.maxWidth >= 1000;
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildQuickActionsRail(extended: isWide),
+                      if (isWide) const SizedBox(width: 12),
+                      Expanded(child: _buildDashboardContent()),
+                    ],
+                  );
+                },
+              ),
       ),
     );
   }
@@ -199,36 +423,7 @@ class _DriverDashboardState extends State<DriverDashboard>
         child: Column(
           children: [
             // Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'RideMate Driver',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    Text(
-                      'Welcome, ${_driverData?['name'] ?? 'Driver'}!',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Colors.white70,
-                      ),
-                    ),
-                  ],
-                ),
-                IconButton(
-                  onPressed: _signOut,
-                  icon: const Icon(Icons.logout, color: Colors.white70),
-                ),
-              ],
-            ),
+            _buildHeader(),
 
             const SizedBox(height: 30),
 
@@ -236,227 +431,211 @@ class _DriverDashboardState extends State<DriverDashboard>
             Expanded(
               child: FadeTransition(
                 opacity: _fadeAnimation,
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      // Online/Offline Toggle
-                      Container(
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: _isOnline
-                                ? [Colors.green, Colors.green.shade600]
-                                : [Colors.grey.shade600, Colors.grey.shade700],
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: (_isOnline ? Colors.green : Colors.grey)
-                                  .withValues(alpha: 0.3),
-                              blurRadius: 20,
-                              spreadRadius: 5,
-                              offset: const Offset(0, 8),
+                child: RefreshIndicator(
+                  color: Colors.amber,
+                  backgroundColor: const Color(0xFF0F0F23),
+                  onRefresh: _loadDriverData,
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    child: Column(
+                      children: [
+                        // Online/Offline Toggle
+                        Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: _isOnline
+                                  ? [Colors.green, Colors.green.shade600]
+                                  : [
+                                      Colors.grey.shade600,
+                                      Colors.grey.shade700,
+                                    ],
                             ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 60,
-                              height: 60,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(15),
-                              ),
-                              child: Icon(
-                                _isOnline
-                                    ? Icons.radio_button_checked
-                                    : Icons.radio_button_off,
-                                color: Colors.white,
-                                size: 30,
-                              ),
-                            ),
-                            const SizedBox(width: 20),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _isOnline
-                                        ? 'You\'re Online'
-                                        : 'You\'re Offline',
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    _isOnline
-                                        ? 'Ready to accept ride requests'
-                                        : 'Tap to go online and start earning',
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.white70,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Switch(
-                              value: _isOnline,
-                              onChanged: (value) => _toggleOnlineStatus(),
-                              activeColor: Colors.white,
-                              activeTrackColor: Colors.white.withValues(
-                                alpha: 0.3,
-                              ),
-                              inactiveThumbColor: Colors.white70,
-                              inactiveTrackColor: Colors.white.withValues(
-                                alpha: 0.2,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      // Stats Grid
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildStatCard(
-                              'Total Rides',
-                              '${_driverData?['totalRides'] ?? 0}',
-                              Icons.local_taxi,
-                              Colors.blue,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _buildStatCard(
-                              'Rating',
-                              '${_driverData?['rating']?.toStringAsFixed(1) ?? '0.0'}',
-                              Icons.star,
-                              Colors.amber,
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildStatCard(
-                              'Earnings',
-                              '₹${_driverData?['totalEarnings']?.toStringAsFixed(0) ?? '0'}',
-                              Icons.currency_rupee,
-                              Colors.green,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _buildStatCard(
-                              'Status',
-                              _driverData?['isApproved'] == true
-                                  ? 'Approved'
-                                  : 'Pending',
-                              Icons.verified,
-                              _driverData?['isApproved'] == true
-                                  ? Colors.green
-                                  : Colors.orange,
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      // Driver Info Card
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.2),
-                            width: 1,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Driver Information',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            if (_driverData != null) ...[
-                              _buildInfoRow(
-                                'License ID',
-                                _driverData!['licenseId'] ?? 'N/A',
-                              ),
-                              _buildInfoRow(
-                                'Car Model',
-                                _driverData!['carModel'] ?? 'N/A',
-                              ),
-                              _buildInfoRow(
-                                'Phone',
-                                _driverData!['phoneNumber'] ?? 'N/A',
-                              ),
-                              _buildInfoRow(
-                                'Email',
-                                _driverData!['email'] ?? 'N/A',
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: (_isOnline ? Colors.green : Colors.grey)
+                                    .withValues(alpha: 0.3),
+                                blurRadius: 20,
+                                spreadRadius: 5,
+                                offset: const Offset(0, 8),
                               ),
                             ],
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 60,
+                                height: 60,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                                child: Icon(
+                                  _isOnline
+                                      ? Icons.radio_button_checked
+                                      : Icons.radio_button_off,
+                                  color: Colors.white,
+                                  size: 30,
+                                ),
+                              ),
+                              const SizedBox(width: 20),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _isOnline
+                                          ? 'You\'re Online'
+                                          : 'You\'re Offline',
+                                      style: const TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _isOnline
+                                          ? 'Ready to accept ride requests'
+                                          : 'Tap to go online and start earning',
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.white70,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Switch(
+                                value: _isOnline,
+                                onChanged: (value) => _toggleOnlineStatus(),
+                                activeColor: Colors.white,
+                                activeTrackColor: Colors.white.withValues(
+                                  alpha: 0.3,
+                                ),
+                                inactiveThumbColor: Colors.white70,
+                                inactiveTrackColor: Colors.white.withValues(
+                                  alpha: 0.2,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        // Stats Grid
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildStatCard(
+                                'Total Rides',
+                                '${_driverData?['totalRides'] ?? 0}',
+                                Icons.local_taxi,
+                                Colors.blue,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: _buildStatCard(
+                                'Rating',
+                                '${_driverData?['rating']?.toStringAsFixed(1) ?? '0.0'}',
+                                Icons.star,
+                                Colors.amber,
+                              ),
+                            ),
                           ],
                         ),
-                      ),
 
-                      const SizedBox(height: 24),
+                        const SizedBox(height: 16),
 
-                      // Quick Actions
-                      const Text(
-                        'Quick Actions',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildStatCard(
+                                'Earnings',
+                                '₹${_driverData?['totalEarnings']?.toStringAsFixed(0) ?? '0'}',
+                                Icons.currency_rupee,
+                                Colors.green,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: _buildStatCard(
+                                'Status',
+                                _driverData?['isApproved'] == true
+                                    ? 'Approved'
+                                    : 'Pending',
+                                Icons.verified,
+                                _driverData?['isApproved'] == true
+                                    ? Colors.green
+                                    : Colors.orange,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(height: 16),
 
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildActionButton(
-                              'View Rides',
-                              Icons.list,
-                              Colors.blue,
-                              () => _showFeatureDialog('View Rides'),
+                        const SizedBox(height: 24),
+
+                        // Driver Info Card
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              width: 1,
                             ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.4),
+                                blurRadius: 20,
+                                spreadRadius: 2,
+                                offset: const Offset(0, 10),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _buildActionButton(
-                              'Earnings',
-                              Icons.account_balance_wallet,
-                              Colors.green,
-                              () => _showFeatureDialog('Earnings'),
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Driver Information',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              if (_driverData != null) ...[
+                                _buildInfoRow(
+                                  'License ID',
+                                  _driverData!['licenseId'] ?? 'N/A',
+                                ),
+                                _buildInfoRow(
+                                  'Car Model',
+                                  _driverData!['carModel'] ?? 'N/A',
+                                ),
+                                _buildInfoRow(
+                                  'Phone',
+                                  _driverData!['phoneNumber'] ?? 'N/A',
+                                ),
+                                _buildInfoRow(
+                                  'Email',
+                                  _driverData!['email'] ?? 'N/A',
+                                ),
+                              ],
+                            ],
                           ),
-                        ],
-                      ),
-                    ],
+                        ),
+
+                        const SizedBox(height: 8),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -464,6 +643,35 @@ class _DriverDashboardState extends State<DriverDashboard>
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildHeader() {
+    // header only shows avatar now; keep variables removed to avoid warnings
+    final String? avatarUrl = _driverData?['profileImageUrl'] as String?;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.2),
+              width: 1,
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: avatarUrl != null && avatarUrl.isNotEmpty
+              ? Image.network(avatarUrl, fit: BoxFit.cover)
+              : Container(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  child: const Icon(Icons.person, color: Colors.white70),
+                ),
+        ),
+      ],
     );
   }
 
@@ -476,17 +684,32 @@ class _DriverDashboardState extends State<DriverDashboard>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
+        color: Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.2),
+          color: Colors.white.withValues(alpha: 0.18),
           width: 1,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 16,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Column(
         children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 8),
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(height: 10),
           Text(
             value,
             style: const TextStyle(
@@ -532,38 +755,37 @@ class _DriverDashboardState extends State<DriverDashboard>
     );
   }
 
-  Widget _buildActionButton(
-    String title,
-    IconData icon,
-    Color color,
-    VoidCallback onTap,
-  ) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
+  // Removed old flat action button in favor of gradient action with ripple
+
+  // Removed old gradient quick action (replaced by bottom NavigationBar)
+
+  void _checkAndShowImageUploadDialog(Map<String, dynamic> driverData) {
+    // Check if driver has uploaded both images
+    final hasProfileImage =
+        driverData['profileImageUrl'] != null &&
+        driverData['profileImageUrl'].toString().isNotEmpty;
+    final hasLicenseImage =
+        driverData['licenseImageUrl'] != null &&
+        driverData['licenseImageUrl'].toString().isNotEmpty;
+
+    // Show dialog if images are missing and we haven't shown it yet
+    if ((!hasProfileImage || !hasLicenseImage) && !_hasShownImageUploadDialog) {
+      _hasShownImageUploadDialog = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showImageUploadDialog();
+      });
+    }
+  }
+
+  void _showImageUploadDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Prevent dismissing by tapping outside
+      builder: (context) => const DriverImageUploadDialog(),
+    ).then((_) {
+      // Reload driver data after dialog is closed
+      _loadDriverData();
+    });
   }
 
   void _showFeatureDialog(String feature) {
