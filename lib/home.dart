@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
 import 'services/auth_service.dart';
 import 'map_screen.dart';
-import 'rides_booking.dart';
 import 'services/firestore_service.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:geolocator/geolocator.dart';
-import 'package:latlong2/latlong.dart' as ll;
+// Removed google_place to avoid http version conflict
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -24,14 +20,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   final AuthService _authService = AuthService();
   final TextEditingController _pickupController = TextEditingController();
   final TextEditingController _destinationController = TextEditingController();
-  final FocusNode _pickupFocusNode = FocusNode();
-  final FocusNode _destinationFocusNode = FocusNode();
   // Autocomplete for web removed; simple text fields are used
   String _selectedRideType = 'Solo'; // Default to Solo
-  List<String> _pickupSuggestions = [];
-  List<String> _destinationSuggestions = [];
-  bool _showPickupSuggestions = false;
-  bool _showDestinationSuggestions = false;
 
   @override
   void initState() {
@@ -68,94 +58,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _slideController.dispose();
     _pickupController.dispose();
     _destinationController.dispose();
-    _pickupFocusNode.dispose();
-    _destinationFocusNode.dispose();
     super.dispose();
-  }
-
-  // Function to fetch place suggestions using Nominatim (OpenStreetMap)
-  Future<List<String>> _fetchPlaceSuggestions(String input) async {
-    try {
-      final String baseUrl = 'https://nominatim.openstreetmap.org/search';
-
-      // Encode the input to handle special characters
-      final String encodedInput = Uri.encodeComponent(input);
-
-      final Uri url = Uri.parse(
-        '$baseUrl?format=json&addressdetails=1&limit=5&q=$encodedInput&countrycodes=IN',
-      );
-
-      final response = await http.get(
-        url,
-        headers: {'User-Agent': 'RideMate/1.0 (contact: support@example.com)'},
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as List;
-        final suggestions = <String>[];
-
-        for (final item in data) {
-          final address = item['display_name'] as String?;
-          if (address != null) {
-            suggestions.add(address);
-          }
-        }
-
-        return suggestions;
-      } else {
-        print('Nominatim API error: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error fetching place suggestions: $e');
-    }
-
-    return [];
-  }
-
-  // Function to handle text field changes for autocomplete
-  void _onPickupTextChanged(String text) async {
-    if (text.length > 2) {
-      final suggestions = await _fetchPlaceSuggestions(text);
-      setState(() {
-        _pickupSuggestions = suggestions;
-        _showPickupSuggestions = suggestions.isNotEmpty;
-      });
-    } else {
-      setState(() {
-        _pickupSuggestions = [];
-        _showPickupSuggestions = false;
-      });
-    }
-  }
-
-  void _onDestinationTextChanged(String text) async {
-    if (text.length > 2) {
-      final suggestions = await _fetchPlaceSuggestions(text);
-      setState(() {
-        _destinationSuggestions = suggestions;
-        _showDestinationSuggestions = suggestions.isNotEmpty;
-      });
-    } else {
-      setState(() {
-        _destinationSuggestions = [];
-        _showDestinationSuggestions = false;
-      });
-    }
-  }
-
-  // Function to select a suggestion
-  void _selectPickupSuggestion(String suggestion) {
-    setState(() {
-      _pickupController.text = suggestion;
-      _showPickupSuggestions = false;
-    });
-  }
-
-  void _selectDestinationSuggestion(String suggestion) {
-    setState(() {
-      _destinationController.text = suggestion;
-      _showDestinationSuggestions = false;
-    });
   }
 
   void _signOut() async {
@@ -423,111 +326,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () async {
-                // Validate pickup and destination
-                final pickup = _pickupController.text.trim();
-                final destination = _destinationController.text.trim();
-
-                if (pickup.isEmpty || destination.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Please enter both pickup and destination addresses',
-                      ),
-                      backgroundColor: Colors.red,
+              onPressed: () {
+                // Handle driver selection
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Selected ${driver.name} - ${driver.carModel}',
                     ),
-                  );
-                  return;
-                }
-
-                // Show loading indicator
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (context) =>
-                      const Center(child: CircularProgressIndicator()),
+                    backgroundColor: Colors.deepPurple,
+                  ),
                 );
-
-                try {
-                  // Create ride request in Firestore
-                  final rideId = await FirestoreService.createRideRequest(
-                    pickupAddress: pickup,
-                    destinationAddress: destination,
-                    rideType: _selectedRideType,
-                  );
-
-                  if (rideId == null) {
-                    Navigator.of(context).pop(); // Close loading dialog
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Failed to create ride. Try again.'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                    return;
-                  }
-
-                  // Validate driver has a userId
-                  if (driver.userId == null || driver.userId!.isEmpty) {
-                    Navigator.of(context).pop(); // Close loading dialog
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Invalid driver information. Please try another driver.',
-                        ),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                    return;
-                  }
-
-                  // Update ride with driver details
-                  await FirestoreService.updateRideWithDriver(
-                    rideId: rideId,
-                    driverId: driver.userId!,
-                    driverName: driver.name,
-                    driverEmail: driver.email,
-                    driverPhoneNumber: driver.phoneNumber,
-                    carModel: driver.carModel,
-                    carNumber: driver.carNumber,
-                    rating: driver.rating,
-                    fare: fare,
-                    distance: driver.distance,
-                  );
-
-                  Navigator.of(context).pop(); // Close loading dialog
-
-                  // Navigate to booking page
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => RidesBookingPage(
-                        rideId: rideId,
-                        driverDetails: {
-                          'name': driver.name,
-                          'carModel': driver.carModel,
-                          'carNumber': driver.carNumber,
-                          'rating': driver.rating,
-                          'phoneNumber': driver.phoneNumber,
-                          'baseFare': driver.baseFare,
-                          'perKmRate': driver.perKmRate,
-                          'distance': driver.distance,
-                        },
-                        pickupAddress: pickup,
-                        destinationAddress: destination,
-                        fare: fare,
-                        rideType: _selectedRideType,
-                      ),
-                    ),
-                  );
-                } catch (e) {
-                  Navigator.of(context).pop(); // Close loading dialog
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.deepPurple,
@@ -900,100 +708,26 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                         width: 1,
                                       ),
                                     ),
-                                    child: Stack(
-                                      children: [
-                                        TextField(
-                                          controller: _pickupController,
-                                          focusNode: _pickupFocusNode,
-                                          readOnly: false,
-                                          onChanged: _onPickupTextChanged,
-                                          onTap: () {
-                                            setState(() {
-                                              _showPickupSuggestions =
-                                                  _pickupSuggestions.isNotEmpty;
-                                            });
-                                          },
-                                          decoration: InputDecoration(
-                                            labelText: 'Pickup location',
-                                            labelStyle: TextStyle(
-                                              color: Colors.grey.shade600,
-                                            ),
-                                            prefixIcon: Icon(
-                                              Icons.my_location,
-                                              color: Colors.deepPurple,
-                                              size: 20,
-                                            ),
-                                            suffixIcon: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                IconButton(
-                                                  icon: const Icon(
-                                                    Icons.my_location_outlined,
-                                                  ),
-                                                  onPressed:
-                                                      _getCurrentLocation,
-                                                ),
-                                                IconButton(
-                                                  icon: const Icon(Icons.clear),
-                                                  onPressed: () {
-                                                    setState(() {
-                                                      _pickupController.clear();
-                                                      _pickupSuggestions = [];
-                                                      _showPickupSuggestions =
-                                                          false;
-                                                    });
-                                                  },
-                                                ),
-                                              ],
-                                            ),
-                                            border: InputBorder.none,
-                                            contentPadding:
-                                                const EdgeInsets.all(16),
-                                          ),
+                                    child: TextField(
+                                      controller: _pickupController,
+                                      readOnly: false,
+                                      onTap: null,
+                                      decoration: InputDecoration(
+                                        labelText: 'Pickup location',
+                                        labelStyle: TextStyle(
+                                          color: Colors.grey.shade600,
                                         ),
-                                        if (_showPickupSuggestions)
-                                          Positioned(
-                                            top: 60,
-                                            left: 0,
-                                            right: 0,
-                                            child: Material(
-                                              elevation: 4,
-                                              borderRadius:
-                                                  BorderRadius.circular(16),
-                                              child: Container(
-                                                constraints:
-                                                    const BoxConstraints(
-                                                      maxHeight: 200,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.white,
-                                                  borderRadius:
-                                                      BorderRadius.circular(16),
-                                                ),
-                                                child: ListView.builder(
-                                                  shrinkWrap: true,
-                                                  itemCount:
-                                                      _pickupSuggestions.length,
-                                                  itemBuilder: (context, index) {
-                                                    return ListTile(
-                                                      title: Text(
-                                                        _pickupSuggestions[index],
-                                                        style: const TextStyle(
-                                                          fontSize: 14,
-                                                        ),
-                                                      ),
-                                                      onTap: () {
-                                                        _selectPickupSuggestion(
-                                                          _pickupSuggestions[index],
-                                                        );
-                                                      },
-                                                    );
-                                                  },
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                      ],
+                                        prefixIcon: Icon(
+                                          Icons.my_location,
+                                          color: Colors.deepPurple,
+                                          size: 20,
+                                        ),
+                                        suffixIcon: null,
+                                        border: InputBorder.none,
+                                        contentPadding: const EdgeInsets.all(
+                                          16,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(height: 16),
@@ -1006,91 +740,26 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                         width: 1,
                                       ),
                                     ),
-                                    child: Stack(
-                                      children: [
-                                        TextField(
-                                          controller: _destinationController,
-                                          focusNode: _destinationFocusNode,
-                                          readOnly: false,
-                                          onChanged: _onDestinationTextChanged,
-                                          onTap: () {
-                                            setState(() {
-                                              _showDestinationSuggestions =
-                                                  _destinationSuggestions
-                                                      .isNotEmpty;
-                                            });
-                                          },
-                                          decoration: InputDecoration(
-                                            labelText: 'Where to?',
-                                            labelStyle: TextStyle(
-                                              color: Colors.grey.shade600,
-                                            ),
-                                            prefixIcon: Icon(
-                                              Icons.location_on,
-                                              color: Colors.amber,
-                                              size: 20,
-                                            ),
-                                            suffixIcon: IconButton(
-                                              icon: const Icon(Icons.clear),
-                                              onPressed: () {
-                                                setState(() {
-                                                  _destinationController
-                                                      .clear();
-                                                  _destinationSuggestions = [];
-                                                  _showDestinationSuggestions =
-                                                      false;
-                                                });
-                                              },
-                                            ),
-                                            border: InputBorder.none,
-                                            contentPadding:
-                                                const EdgeInsets.all(16),
-                                          ),
+                                    child: TextField(
+                                      controller: _destinationController,
+                                      readOnly: false,
+                                      onTap: null,
+                                      decoration: InputDecoration(
+                                        labelText: 'Where to?',
+                                        labelStyle: TextStyle(
+                                          color: Colors.grey.shade600,
                                         ),
-                                        if (_showDestinationSuggestions)
-                                          Positioned(
-                                            top: 60,
-                                            left: 0,
-                                            right: 0,
-                                            child: Material(
-                                              elevation: 4,
-                                              borderRadius:
-                                                  BorderRadius.circular(16),
-                                              child: Container(
-                                                constraints:
-                                                    const BoxConstraints(
-                                                      maxHeight: 200,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.white,
-                                                  borderRadius:
-                                                      BorderRadius.circular(16),
-                                                ),
-                                                child: ListView.builder(
-                                                  shrinkWrap: true,
-                                                  itemCount:
-                                                      _destinationSuggestions
-                                                          .length,
-                                                  itemBuilder: (context, index) {
-                                                    return ListTile(
-                                                      title: Text(
-                                                        _destinationSuggestions[index],
-                                                        style: const TextStyle(
-                                                          fontSize: 14,
-                                                        ),
-                                                      ),
-                                                      onTap: () {
-                                                        _selectDestinationSuggestion(
-                                                          _destinationSuggestions[index],
-                                                        );
-                                                      },
-                                                    );
-                                                  },
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                      ],
+                                        prefixIcon: Icon(
+                                          Icons.location_on,
+                                          color: Colors.amber,
+                                          size: 20,
+                                        ),
+                                        suffixIcon: null,
+                                        border: InputBorder.none,
+                                        contentPadding: const EdgeInsets.all(
+                                          16,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(height: 24),
@@ -1686,109 +1355,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
       ),
     ];
-  }
-
-  // Function to get current location
-  Future<void> _getCurrentLocation() async {
-    try {
-      bool serviceEnabled;
-      LocationPermission permission;
-
-      // Test if location services are enabled.
-      serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        // Location services are not enabled don't continue
-        // accessing the position and request users of the
-        // App to enable the location services.
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Location services are disabled.')),
-          );
-        }
-        return;
-      }
-
-      permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Location permissions are denied')),
-            );
-          }
-          return;
-        }
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        // Permissions are denied forever, handle appropriately.
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Location permissions are permanently denied, we cannot request permissions.',
-              ),
-            ),
-          );
-        }
-        return;
-      }
-
-      // When we reach here, permissions are granted and we can
-      // continue accessing the position of the device.
-      Position position = await Geolocator.getCurrentPosition();
-
-      // Reverse geocode to get address
-      final address = await _reverseGeocode(
-        ll.LatLng(position.latitude, position.longitude),
-      );
-
-      if (address != null) {
-        setState(() {
-          _pickupController.text = address;
-        });
-      } else {
-        // Fallback to coordinates
-        setState(() {
-          _pickupController.text =
-              '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
-        });
-      }
-    } catch (e) {
-      print('Error getting current location: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error getting current location: $e')),
-        );
-      }
-    }
-  }
-
-  // Function to reverse geocode coordinates to address using Nominatim
-  Future<String?> _reverseGeocode(ll.LatLng coordinates) async {
-    try {
-      final String baseUrl = 'https://nominatim.openstreetmap.org/reverse';
-
-      final Uri url = Uri.parse(
-        '$baseUrl?format=json&lat=${coordinates.latitude}&lon=${coordinates.longitude}',
-      );
-
-      final response = await http.get(
-        url,
-        headers: {'User-Agent': 'RideMate/1.0 (contact: support@example.com)'},
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final address = data['display_name'] as String?;
-        return address;
-      }
-    } catch (e) {
-      print('Error reverse geocoding: $e');
-    }
-
-    return null;
   }
 }
 

@@ -5,6 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'services/firestore_service.dart';
 import 'config/app_config.dart';
+import 'rides_booking.dart';
 
 class _OsrmRoute {
   _OsrmRoute({
@@ -34,7 +35,7 @@ class _MapScreenState extends State<MapScreen> {
   Map<String, dynamic>? _ride;
   LatLng? _pickup;
   LatLng? _destination;
-  List<LatLng> _route = const [];
+  List<LatLng> _route = <LatLng>[];
   double? _distanceKm;
   double? _durationMin;
   Set<Marker> _markers = {};
@@ -94,7 +95,7 @@ class _MapScreenState extends State<MapScreen> {
 
       // Update markers and polylines
       _updateMarkersAndPolylines();
-      
+
       // Fit map to polyline or endpoints after build
       WidgetsBinding.instance.addPostFrameCallback((_) => _fitToPolyline());
     } catch (e) {
@@ -179,8 +180,7 @@ class _MapScreenState extends State<MapScreen> {
       final coords = geometry['coordinates'] as List<dynamic>;
       final points = coords
           .map(
-            (c) =>
-                LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()),
+            (c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()),
           )
           .toList(growable: false);
       final distance = (best['distance'] as num).toDouble();
@@ -197,21 +197,21 @@ class _MapScreenState extends State<MapScreen> {
 
   void _fitToPolyline() {
     if (_mapController == null) return;
-    
+
     if (_route.isNotEmpty) {
       // Calculate bounds from route points
       double minLat = _route.first.latitude;
       double maxLat = _route.first.latitude;
       double minLng = _route.first.longitude;
       double maxLng = _route.first.longitude;
-      
+
       for (final point in _route) {
         minLat = minLat < point.latitude ? minLat : point.latitude;
         maxLat = maxLat > point.latitude ? maxLat : point.latitude;
         minLng = minLng < point.longitude ? minLng : point.longitude;
         maxLng = maxLng > point.longitude ? maxLng : point.longitude;
       }
-      
+
       _mapController!.animateCamera(
         CameraUpdate.newLatLngBounds(
           LatLngBounds(
@@ -223,18 +223,26 @@ class _MapScreenState extends State<MapScreen> {
       );
       return;
     }
-    
+
     if (_pickup != null && _destination != null) {
       _mapController!.animateCamera(
         CameraUpdate.newLatLngBounds(
           LatLngBounds(
             southwest: LatLng(
-              _pickup!.latitude < _destination!.latitude ? _pickup!.latitude : _destination!.latitude,
-              _pickup!.longitude < _destination!.longitude ? _pickup!.longitude : _destination!.longitude,
+              _pickup!.latitude < _destination!.latitude
+                  ? _pickup!.latitude
+                  : _destination!.latitude,
+              _pickup!.longitude < _destination!.longitude
+                  ? _pickup!.longitude
+                  : _destination!.longitude,
             ),
             northeast: LatLng(
-              _pickup!.latitude > _destination!.latitude ? _pickup!.latitude : _destination!.latitude,
-              _pickup!.longitude > _destination!.longitude ? _pickup!.longitude : _destination!.longitude,
+              _pickup!.latitude > _destination!.latitude
+                  ? _pickup!.latitude
+                  : _destination!.latitude,
+              _pickup!.longitude > _destination!.longitude
+                  ? _pickup!.longitude
+                  : _destination!.longitude,
             ),
           ),
           100.0,
@@ -246,7 +254,7 @@ class _MapScreenState extends State<MapScreen> {
   void _updateMarkersAndPolylines() {
     final markers = <Marker>{};
     final polylines = <Polyline>{};
-    
+
     if (_pickup != null) {
       markers.add(
         Marker(
@@ -257,7 +265,7 @@ class _MapScreenState extends State<MapScreen> {
         ),
       );
     }
-    
+
     if (_destination != null) {
       markers.add(
         Marker(
@@ -268,7 +276,7 @@ class _MapScreenState extends State<MapScreen> {
         ),
       );
     }
-    
+
     if (_route.isNotEmpty) {
       polylines.add(
         Polyline(
@@ -279,7 +287,7 @@ class _MapScreenState extends State<MapScreen> {
         ),
       );
     }
-    
+
     setState(() {
       _markers = markers;
       _polylines = polylines;
@@ -348,6 +356,13 @@ class _MapScreenState extends State<MapScreen> {
                         myLocationEnabled: true,
                         myLocationButtonEnabled: true,
                         zoomControlsEnabled: true,
+                        trafficEnabled: true,
+                        onTap: (LatLng position) {
+                          // Handle map tap if needed
+                        },
+                        onCameraMove: (CameraPosition position) {
+                          // Handle camera move if needed
+                        },
                       ),
                       if (_error != null)
                         Positioned.fill(
@@ -810,9 +825,58 @@ class _MapScreenState extends State<MapScreen> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () {
-                // Handle driver selection
-                _selectDriver(driver, fare);
+              onPressed: () async {
+                if (driver.userId == null || driver.userId!.isEmpty) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Driver information is incomplete.'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                  return;
+                }
+
+                try {
+                  // Show loading indicator
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Selecting driver...'),
+                      backgroundColor: Colors.deepPurple,
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+
+                  // Update ride with driver information
+                  await FirestoreService.updateRideWithDriver(
+                    rideId: widget.rideId,
+                    driverId: driver.userId!,
+                    driverName: driver.name,
+                    carModel: driver.carModel,
+                    fare: fare,
+                    carNumber: driver.carNumber,
+                    rating: driver.rating,
+                    distance: distanceKm,
+                    driverEmail: driver.email,
+                    driverPhoneNumber: driver.phoneNumber,
+                    driverImageUrl: driver.imageUrl,
+                  );
+
+                  if (mounted) {
+                    Navigator.of(context).pop();
+                  }
+                } catch (e) {
+                  // Show error message
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Failed to select driver: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.deepPurple,
@@ -837,64 +901,6 @@ class _MapScreenState extends State<MapScreen> {
         ],
       ),
     );
-  }
-
-  // Select driver and update ride information
-  Future<void> _selectDriver(Driver driver, double fare) async {
-    try {
-      // Show loading indicator
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Selecting driver...'),
-          backgroundColor: Colors.deepPurple,
-        ),
-      );
-
-      // Update ride with driver information
-      await FirestoreService.updateRideWithDriver(
-        rideId: widget.rideId,
-        driverId: driver.userId ?? '',
-        driverName: driver.name,
-        carModel: driver.carModel,
-        fare: fare,
-        carNumber: driver.carNumber,
-        rating: driver.rating,
-        distance: driver.distance,
-        driverEmail: driver.email,
-        driverPhoneNumber: driver.phoneNumber,
-        driverImageUrl: driver.imageUrl,
-      );
-
-      // Update ride status to "requested" as per requirement
-      await FirestoreService.updateRideStatus(widget.rideId, 'requested');
-
-      // Show success message
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Driver ${driver.name} selected successfully!',
-            ),
-            backgroundColor: Colors.green,
-          ),
-        );
-        
-        // Navigate back to previous screen
-        Navigator.of(context).pop();
-      }
-    } catch (e) {
-      // Show error message
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Failed to select driver: $e',
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
   }
 }
 

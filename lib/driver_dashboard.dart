@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'services/auth_service.dart';
 import 'login_page.dart';
+import 'map_screen.dart';
+import 'services/auth_service.dart';
+import 'services/firestore_service.dart';
 import 'widgets/driver_image_upload_dialog.dart';
 
 class DriverDashboard extends StatefulWidget {
@@ -23,6 +25,42 @@ class _DriverDashboardState extends State<DriverDashboard>
   bool _isOnline = false;
   bool _hasShownImageUploadDialog = false;
   int _navIndex = 0;
+
+  List<Map<String, dynamic>> _rides = <Map<String, dynamic>>[];
+  bool _isRidesLoading = false;
+  String? _ridesError;
+
+  Future<void> _loadDriverRides({bool initialLoad = false}) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    if (!initialLoad) {
+      setState(() {
+        _isRidesLoading = true;
+        _ridesError = null;
+      });
+    }
+
+    try {
+      final rides = await FirestoreService.getRidesForDriver(user.uid);
+      if (mounted) {
+        setState(() {
+          _rides = rides;
+          _isRidesLoading = false;
+          _ridesError = rides.isEmpty
+              ? 'No rides found for your account yet.'
+              : null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isRidesLoading = false;
+          _ridesError = 'Failed to load rides: $e';
+        });
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -65,11 +103,11 @@ class _DriverDashboardState extends State<DriverDashboard>
         backgroundColor: Colors.transparent,
         extended: extended,
         selectedIndex: _navIndex,
-        onDestinationSelected: (index) {
+        onDestinationSelected: (index) async {
           setState(() => _navIndex = index);
           switch (index) {
             case 0:
-              _showFeatureDialog('View Rides');
+              await _loadDriverRides();
               break;
             case 1:
               _showFeatureDialog('Earnings');
@@ -243,6 +281,7 @@ class _DriverDashboardState extends State<DriverDashboard>
   }
 
   Future<void> _loadDriverData() async {
+    await _loadDriverRides(initialLoad: true);
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
@@ -629,6 +668,17 @@ class _DriverDashboardState extends State<DriverDashboard>
                                   _driverData!['email'] ?? 'N/A',
                                 ),
                               ],
+                              const SizedBox(height: 24),
+                              const Text(
+                                'Your Recent Rides',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              _buildRidesSection(),
                             ],
                           ),
                         ),
@@ -643,6 +693,172 @@ class _DriverDashboardState extends State<DriverDashboard>
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildRidesSection() {
+    if (_isRidesLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.amber),
+      );
+    }
+
+    if (_ridesError != null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.red.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+        ),
+        child: Text(
+          _ridesError!,
+          style: const TextStyle(color: Colors.redAccent),
+        ),
+      );
+    }
+
+    if (_rides.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        ),
+        child: const Text(
+          'No rides to display right now. Keep an eye out for new bookings!',
+          style: TextStyle(color: Colors.white70),
+        ),
+      );
+    }
+
+    return Column(
+      children: _rides.map((ride) {
+        final status = ride['status'] as String? ?? 'unknown';
+        final pickup = ride['pickupAddress'] as String? ?? 'Unknown pickup';
+        final destination =
+            ride['destinationAddress'] as String? ?? 'Unknown destination';
+        final createdAt = ride['createdAt'];
+        String createdText = 'Just now';
+        if (createdAt is Timestamp) {
+          final date = createdAt.toDate();
+          createdText =
+              '${date.day}/${date.month}/${date.year} '
+              '${date.hour.toString().padLeft(2, '0')}:'
+              '${date.minute.toString().padLeft(2, '0')}';
+        }
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.25),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.deepPurple.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      status.toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    createdText,
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.my_location, color: Colors.amber, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      pickup,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.location_on,
+                    color: Colors.greenAccent,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      destination,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            MapScreen(rideId: ride['id'] as String),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepPurple,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: const Icon(Icons.map_outlined),
+                  label: const Text('View Route'),
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 
