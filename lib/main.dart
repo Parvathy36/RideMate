@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'login_page.dart';
 import 'register_page.dart';
 import 'about_page.dart';
@@ -23,6 +24,12 @@ import 'email_verification_page.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Initialize Google Maps Flutter
+  if (!kIsWeb) {
+    // For Android and iOS, set the API key
+    // The API key is already configured in platform-specific files
+  }
+
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -37,6 +44,25 @@ void main() async {
 
     // Test Email/Password authentication (uncomment after enabling in Firebase Console)
     // await FirebaseTest.testEmailPasswordAuth();
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    print('✅ Firebase initialized successfully in main()');
+
+    // Run Firebase connection test
+    await FirebaseTest.testFirebaseConnection();
+
+    // Initialize Firestore with license data
+    await FirestoreService.initializeFirestore();
+
+    // Test Email/Password authentication (uncomment after enabling in Firebase Console)
+    // await FirebaseTest.testEmailPasswordAuth();
+
+    // Initialize Google Maps Flutter
+    if (!kIsWeb) {
+      // For Android and iOS, initialize with API key
+      // The API key is already configured in platform-specific files
+    }
   } catch (e) {
     print('❌ Firebase initialization failed: $e');
   }

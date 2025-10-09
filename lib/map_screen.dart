@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart' as ll;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'services/firestore_service.dart';
+import 'config/app_config.dart';
 
 class _OsrmRoute {
   _OsrmRoute({
@@ -12,7 +12,7 @@ class _OsrmRoute {
     required this.distanceMeters,
     required this.durationSeconds,
   });
-  final List<ll.LatLng> points;
+  final List<LatLng> points;
   final double distanceMeters;
   final double durationSeconds;
 }
@@ -27,16 +27,18 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  final MapController _mapController = MapController();
+  GoogleMapController? _mapController;
   bool _loading = true;
   String? _error;
 
   Map<String, dynamic>? _ride;
-  ll.LatLng? _pickup;
-  ll.LatLng? _destination;
-  List<ll.LatLng> _route = const [];
+  LatLng? _pickup;
+  LatLng? _destination;
+  List<LatLng> _route = const [];
   double? _distanceKm;
   double? _durationMin;
+  Set<Marker> _markers = {};
+  Set<Polyline> _polylines = {};
 
   @override
   void initState() {
@@ -87,12 +89,16 @@ class _MapScreenState extends State<MapScreen> {
           summary: {'distanceKm': _distanceKm, 'durationMin': _durationMin},
         );
       } else {
-        _route = <ll.LatLng>[_pickup!, _destination!];
+        _route = <LatLng>[_pickup!, _destination!];
       }
 
+      // Update markers and polylines
+      _updateMarkersAndPolylines();
+      
       // Fit map to polyline or endpoints after build
       WidgetsBinding.instance.addPostFrameCallback((_) => _fitToPolyline());
     } catch (e) {
+      print('Map initialization error: $e');
       _error = 'Failed to load map: $e';
     } finally {
       if (mounted) {
@@ -103,14 +109,14 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  ll.LatLng? _extractLatLng(dynamic value) {
+  LatLng? _extractLatLng(dynamic value) {
     try {
       if (value == null) return null;
       if (value is Map<String, dynamic>) {
         final lat = value['latitude'] as num?;
         final lng = value['longitude'] as num?;
         if (lat != null && lng != null) {
-          return ll.LatLng(lat.toDouble(), lng.toDouble());
+          return LatLng(lat.toDouble(), lng.toDouble());
         }
       }
       return null;
@@ -119,46 +125,34 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  Future<ll.LatLng?> _geocodeAddress(String address) async {
+  Future<LatLng?> _geocodeAddress(String address) async {
     try {
-      // Bias to India (Kerala) to disambiguate short names like Kottayam, Kanjirappally
+      // Use Google Geocoding API with your API key
       final url = Uri.parse(
-        'https://nominatim.openstreetmap.org/search'
-        '?format=json&addressdetails=1&limit=5&countrycodes=in'
-        '&q=${Uri.encodeComponent(address)}',
+        'https://maps.googleapis.com/maps/api/geocode/json'
+        '?address=${Uri.encodeComponent(address)}'
+        '&key=${AppConfig.googleMapsApiKey}',
       );
-      final resp = await http.get(
-        url,
-        headers: {'User-Agent': 'RideMate/1.0 (contact: support@example.com)'},
-      );
+      final resp = await http.get(url);
       if (resp.statusCode != 200) return null;
-      final List results = json.decode(resp.body) as List;
-      if (results.isEmpty) return null;
+      final data = json.decode(resp.body) as Map<String, dynamic>;
+      final results = data['results'] as List?;
+      if (results == null || results.isEmpty) return null;
 
-      Map<String, dynamic>? pick;
-      for (final r in results) {
-        final m = r as Map<String, dynamic>;
-        final addr = (m['address'] as Map<String, dynamic>?) ?? {};
-        final state = (addr['state'] as String?)?.toLowerCase() ?? '';
-        if (state.contains('kerala')) {
-          pick = m;
-          break;
-        }
-      }
-      pick ??= results.first as Map<String, dynamic>;
-
-      final lat = double.tryParse(pick['lat'] as String? ?? '');
-      final lon = double.tryParse(pick['lon'] as String? ?? '');
-      if (lat == null || lon == null) return null;
-      return ll.LatLng(lat, lon);
+      final result = results.first as Map<String, dynamic>;
+      final geometry = result['geometry'] as Map<String, dynamic>;
+      final location = geometry['location'] as Map<String, dynamic>;
+      final lat = (location['lat'] as num).toDouble();
+      final lng = (location['lng'] as num).toDouble();
+      return LatLng(lat, lng);
     } catch (_) {
       return null;
     }
   }
 
   Future<_OsrmRoute?> _fetchOsrmRouteWithMeta(
-    ll.LatLng origin,
-    ll.LatLng destination,
+    LatLng origin,
+    LatLng destination,
   ) async {
     try {
       final url = Uri.parse(
@@ -186,7 +180,7 @@ class _MapScreenState extends State<MapScreen> {
       final points = coords
           .map(
             (c) =>
-                ll.LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()),
+                LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()),
           )
           .toList(growable: false);
       final distance = (best['distance'] as num).toDouble();
@@ -202,23 +196,99 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _fitToPolyline() {
+    if (_mapController == null) return;
+    
     if (_route.isNotEmpty) {
-      final bounds = LatLngBounds.fromPoints(_route);
-      _mapController.fitCamera(
-        CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(40)),
+      // Calculate bounds from route points
+      double minLat = _route.first.latitude;
+      double maxLat = _route.first.latitude;
+      double minLng = _route.first.longitude;
+      double maxLng = _route.first.longitude;
+      
+      for (final point in _route) {
+        minLat = minLat < point.latitude ? minLat : point.latitude;
+        maxLat = maxLat > point.latitude ? maxLat : point.latitude;
+        minLng = minLng < point.longitude ? minLng : point.longitude;
+        maxLng = maxLng > point.longitude ? maxLng : point.longitude;
+      }
+      
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          LatLngBounds(
+            southwest: LatLng(minLat, minLng),
+            northeast: LatLng(maxLat, maxLng),
+          ),
+          100.0,
+        ),
       );
       return;
     }
-    if (_pickup == null || _destination == null) return;
-    final bounds = LatLngBounds.fromPoints([_pickup!, _destination!]);
-    _mapController.fitCamera(
-      CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(40)),
-    );
+    
+    if (_pickup != null && _destination != null) {
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          LatLngBounds(
+            southwest: LatLng(
+              _pickup!.latitude < _destination!.latitude ? _pickup!.latitude : _destination!.latitude,
+              _pickup!.longitude < _destination!.longitude ? _pickup!.longitude : _destination!.longitude,
+            ),
+            northeast: LatLng(
+              _pickup!.latitude > _destination!.latitude ? _pickup!.latitude : _destination!.latitude,
+              _pickup!.longitude > _destination!.longitude ? _pickup!.longitude : _destination!.longitude,
+            ),
+          ),
+          100.0,
+        ),
+      );
+    }
+  }
+
+  void _updateMarkersAndPolylines() {
+    final markers = <Marker>{};
+    final polylines = <Polyline>{};
+    
+    if (_pickup != null) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('pickup'),
+          position: _pickup!,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+          infoWindow: const InfoWindow(title: 'Pickup Location'),
+        ),
+      );
+    }
+    
+    if (_destination != null) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('destination'),
+          position: _destination!,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          infoWindow: const InfoWindow(title: 'Destination'),
+        ),
+      );
+    }
+    
+    if (_route.isNotEmpty) {
+      polylines.add(
+        Polyline(
+          polylineId: const PolylineId('route'),
+          points: _route,
+          color: Colors.deepPurple,
+          width: 5,
+        ),
+      );
+    }
+    
+    setState(() {
+      _markers = markers;
+      _polylines = polylines;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final center = _pickup ?? const ll.LatLng(12.9716, 77.5946);
+    final center = _pickup ?? const LatLng(12.9716, 77.5946);
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.deepPurple,
@@ -263,72 +333,77 @@ class _MapScreenState extends State<MapScreen> {
                   flex: 2,
                   child: Stack(
                     children: [
-                      FlutterMap(
-                        mapController: _mapController,
-                        options: MapOptions(
-                          initialCenter: center,
-                          initialZoom: 13,
+                      GoogleMap(
+                        onMapCreated: (GoogleMapController controller) {
+                          _mapController = controller;
+                          _updateMarkersAndPolylines();
+                        },
+                        initialCameraPosition: CameraPosition(
+                          target: center,
+                          zoom: 13,
                         ),
-                        children: [
-                          TileLayer(
-                            urlTemplate:
-                                'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            subdomains: const ['a', 'b', 'c'],
-                            userAgentPackageName: 'com.example.ridemate',
-                          ),
-                          if (_route.isNotEmpty)
-                            PolylineLayer(
-                              polylines: [
-                                Polyline(
-                                  points: _route,
-                                  strokeWidth: 5,
-                                  color: Colors.deepPurple,
-                                ),
-                              ],
-                            ),
-                          MarkerLayer(
-                            markers: [
-                              if (_pickup != null)
-                                Marker(
-                                  point: _pickup!,
-                                  width: 40,
-                                  height: 40,
-                                  child: const Icon(
-                                    Icons.location_pin,
-                                    color: Colors.deepPurple,
-                                    size: 40,
-                                  ),
-                                ),
-                              if (_destination != null)
-                                Marker(
-                                  point: _destination!,
-                                  width: 40,
-                                  height: 40,
-                                  child: const Icon(
-                                    Icons.flag,
-                                    color: Colors.amber,
-                                    size: 36,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ],
+                        markers: _markers,
+                        polylines: _polylines,
+                        mapType: MapType.normal,
+                        myLocationEnabled: true,
+                        myLocationButtonEnabled: true,
+                        zoomControlsEnabled: true,
                       ),
                       if (_error != null)
-                        Positioned(
-                          left: 16,
-                          right: 16,
-                          bottom: 24,
-                          child: Material(
-                            color: Colors.white,
-                            elevation: 4,
-                            borderRadius: BorderRadius.circular(12),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12.0),
-                              child: Text(
-                                _error!,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.black87),
+                        Positioned.fill(
+                          child: Container(
+                            color: Colors.red.shade50,
+                            child: Center(
+                              child: Material(
+                                color: Colors.white,
+                                elevation: 8,
+                                borderRadius: BorderRadius.circular(16),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24.0),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.error_outline,
+                                        color: Colors.red.shade600,
+                                        size: 48,
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        'Map Loading Error',
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.red.shade700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        _error!,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.black87,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      ElevatedButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _error = null;
+                                            _loading = true;
+                                          });
+                                          _init();
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red.shade600,
+                                          foregroundColor: Colors.white,
+                                        ),
+                                        child: const Text('Retry'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -737,14 +812,7 @@ class _MapScreenState extends State<MapScreen> {
             child: ElevatedButton(
               onPressed: () {
                 // Handle driver selection
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'Selected ${driver.name} - ${driver.carModel}',
-                    ),
-                    backgroundColor: Colors.deepPurple,
-                  ),
-                );
+                _selectDriver(driver, fare);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.deepPurple,
@@ -769,6 +837,64 @@ class _MapScreenState extends State<MapScreen> {
         ],
       ),
     );
+  }
+
+  // Select driver and update ride information
+  Future<void> _selectDriver(Driver driver, double fare) async {
+    try {
+      // Show loading indicator
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecting driver...'),
+          backgroundColor: Colors.deepPurple,
+        ),
+      );
+
+      // Update ride with driver information
+      await FirestoreService.updateRideWithDriver(
+        rideId: widget.rideId,
+        driverId: driver.userId ?? '',
+        driverName: driver.name,
+        carModel: driver.carModel,
+        fare: fare,
+        carNumber: driver.carNumber,
+        rating: driver.rating,
+        distance: driver.distance,
+        driverEmail: driver.email,
+        driverPhoneNumber: driver.phoneNumber,
+        driverImageUrl: driver.imageUrl,
+      );
+
+      // Update ride status to "requested" as per requirement
+      await FirestoreService.updateRideStatus(widget.rideId, 'requested');
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Driver ${driver.name} selected successfully!',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        // Navigate back to previous screen
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      // Show error message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Failed to select driver: $e',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
 

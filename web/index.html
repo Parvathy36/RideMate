@@ -1,65 +1,926 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
+import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'services/firestore_service.dart';
+import 'config/app_config.dart';
 
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
+class _OsrmRoute {
+  _OsrmRoute({
+    required this.points,
+    required this.distanceMeters,
+    required this.durationSeconds,
+  });
+  final List<LatLng> points;
+  final double distanceMeters;
+  final double durationSeconds;
+}
 
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+class MapScreen extends StatefulWidget {
+  final String rideId;
 
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
-  <base href="$FLUTTER_BASE_HREF">
+  const MapScreen({super.key, required this.rideId});
 
-  <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  @override
+  State<MapScreen> createState() => _MapScreenState();
+}
 
-  <!-- iOS meta tags & icons -->
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="ridemate">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+class _MapScreenState extends State<MapScreen> {
+  GoogleMapController? _mapController;
+  bool _loading = true;
+  String? _error;
 
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+  Map<String, dynamic>? _ride;
+  LatLng? _pickup;
+  LatLng? _destination;
+  List<LatLng> _route = const [];
+  double? _distanceKm;
+  double? _durationMin;
+  Set<Marker> _markers = {};
+  Set<Polyline> _polylines = {};
 
-  <title>ridemate</title>
-  <link rel="manifest" href="manifest.json">
-  
-  <!-- Google Sign-In meta tag -->
-  <meta name="google-signin-client_id" content="975273579439-tv90tipl383kcekt025g730vgv56bjf4.apps.googleusercontent.com">
-</head>
-<body>
-  <!-- Load Google Maps JavaScript API for web support -->
-  <!-- Replace YOUR_GOOGLE_MAPS_API_KEY with your actual Maps JavaScript API key -->
-  <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY"></script>
-  <!-- Firebase SDK -->
-  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
-  
-  <script>
-    // Your web app's Firebase configuration
-    const firebaseConfig = {
-      apiKey: "AIzaSyCZku6oz0CmnnvgLAZLwRYtJNj0hc1Ltwo",
-      authDomain: "ridemate-afd1e.firebaseapp.com",
-      projectId: "ridemate-afd1e",
-      storageBucket: "ridemate-afd1e.firebasestorage.app",
-      messagingSenderId: "975273579439",
-      appId: "1:975273579439:web:0734372517988c97abd55a",
-      measurementId: "G-3Z59S7QDTQ"
-    };
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      // Load ride
+      _ride = await FirestoreService.getRideById(widget.rideId);
+      if (_ride == null) {
+        throw Exception('Ride not found');
+      }
+
+      // Resolve coordinates (prefer stored GeoPoints if present)
+      _pickup =
+          _extractLatLng(_ride!['pickupLocation']) ??
+          await _geocodeAddress(_ride!['pickupAddress']);
+      _destination =
+          _extractLatLng(_ride!['destinationLocation']) ??
+          await _geocodeAddress(_ride!['destinationAddress']);
+
+      if (_pickup == null || _destination == null) {
+        throw Exception('Could not resolve pickup/destination locations');
+      }
+
+      // Fetch route via OSRM (fastest alternative) and persist normalized points
+      final meta = await _fetchOsrmRouteWithMeta(_pickup!, _destination!);
+      if (meta != null) {
+        _route = meta.points;
+        _distanceKm = meta.distanceMeters / 1000.0;
+        _durationMin = meta.durationSeconds / 60.0;
+        if (_route.isNotEmpty) {
+          _pickup = _route.first;
+          _destination = _route.last;
+        }
+        await FirestoreService.updateRideLocations(
+          rideId: widget.rideId,
+          pickup: {
+            'latitude': _pickup!.latitude,
+            'longitude': _pickup!.longitude,
+          },
+          destination: {
+            'latitude': _destination!.latitude,
+            'longitude': _destination!.longitude,
+          },
+          summary: {'distanceKm': _distanceKm, 'durationMin': _durationMin},
+        );
+      } else {
+        _route = <LatLng>[_pickup!, _destination!];
+      }
+
+      // Update markers and polylines
+      _updateMarkersAndPolylines();
+      
+      // Fit map to polyline or endpoints after build
+      WidgetsBinding.instance.addPostFrameCallback((_) => _fitToPolyline());
+    } catch (e) {
+      print('Map initialization error: $e');
+      _error = 'Failed to load map: $e';
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  LatLng? _extractLatLng(dynamic value) {
+    try {
+      if (value == null) return null;
+      if (value is Map<String, dynamic>) {
+        final lat = value['latitude'] as num?;
+        final lng = value['longitude'] as num?;
+        if (lat != null && lng != null) {
+          return LatLng(lat.toDouble(), lng.toDouble());
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<LatLng?> _geocodeAddress(String address) async {
+    try {
+      // Use Google Geocoding API with your API key
+      final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/geocode/json'
+        '?address=${Uri.encodeComponent(address)}'
+        '&key=${AppConfig.googleMapsApiKey}',
+      );
+      final resp = await http.get(url);
+      if (resp.statusCode != 200) return null;
+      final data = json.decode(resp.body) as Map<String, dynamic>;
+      final results = data['results'] as List?;
+      if (results == null || results.isEmpty) return null;
+
+      final result = results.first as Map<String, dynamic>;
+      final geometry = result['geometry'] as Map<String, dynamic>;
+      final location = geometry['location'] as Map<String, dynamic>;
+      final lat = (location['lat'] as num).toDouble();
+      final lng = (location['lng'] as num).toDouble();
+      return LatLng(lat, lng);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<_OsrmRoute?> _fetchOsrmRouteWithMeta(
+    LatLng origin,
+    LatLng destination,
+  ) async {
+    try {
+      final url = Uri.parse(
+        'https://router.project-osrm.org/route/v1/driving/'
+        '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}'
+        '?overview=full&geometries=geojson&alternatives=true&steps=true&annotations=true&continue_straight=true',
+      );
+      final resp = await http.get(url);
+      if (resp.statusCode != 200) return null;
+      final data = json.decode(resp.body) as Map<String, dynamic>;
+      final routes = data['routes'] as List<dynamic>?;
+      if (routes == null || routes.isEmpty) return null;
+
+      Map<String, dynamic> best = routes.first as Map<String, dynamic>;
+      for (final r in routes) {
+        final m = r as Map<String, dynamic>;
+        if ((m['duration'] as num).toDouble() <
+            (best['duration'] as num).toDouble()) {
+          best = m;
+        }
+      }
+
+      final geometry = best['geometry'] as Map<String, dynamic>;
+      final coords = geometry['coordinates'] as List<dynamic>;
+      final points = coords
+          .map(
+            (c) =>
+                LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()),
+          )
+          .toList(growable: false);
+      final distance = (best['distance'] as num).toDouble();
+      final duration = (best['duration'] as num).toDouble();
+      return _OsrmRoute(
+        points: points,
+        distanceMeters: distance,
+        durationSeconds: duration,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _fitToPolyline() {
+    if (_mapController == null) return;
     
-    // Initialize Firebase
-    firebase.initializeApp(firebaseConfig);
-  </script>
-  
-  <script src="flutter_bootstrap.js" async></script>
-</body>
-</html>
+    if (_route.isNotEmpty) {
+      // Calculate bounds from route points
+      double minLat = _route.first.latitude;
+      double maxLat = _route.first.latitude;
+      double minLng = _route.first.longitude;
+      double maxLng = _route.first.longitude;
+      
+      for (final point in _route) {
+        minLat = minLat < point.latitude ? minLat : point.latitude;
+        maxLat = maxLat > point.latitude ? maxLat : point.latitude;
+        minLng = minLng < point.longitude ? minLng : point.longitude;
+        maxLng = maxLng > point.longitude ? maxLng : point.longitude;
+      }
+      
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          LatLngBounds(
+            southwest: LatLng(minLat, minLng),
+            northeast: LatLng(maxLat, maxLng),
+          ),
+          100.0,
+        ),
+      );
+      return;
+    }
+    
+    if (_pickup != null && _destination != null) {
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          LatLngBounds(
+            southwest: LatLng(
+              _pickup!.latitude < _destination!.latitude ? _pickup!.latitude : _destination!.latitude,
+              _pickup!.longitude < _destination!.longitude ? _pickup!.longitude : _destination!.longitude,
+            ),
+            northeast: LatLng(
+              _pickup!.latitude > _destination!.latitude ? _pickup!.latitude : _destination!.latitude,
+              _pickup!.longitude > _destination!.longitude ? _pickup!.longitude : _destination!.longitude,
+            ),
+          ),
+          100.0,
+        ),
+      );
+    }
+  }
+
+  void _updateMarkersAndPolylines() {
+    final markers = <Marker>{};
+    final polylines = <Polyline>{};
+    
+    if (_pickup != null) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('pickup'),
+          position: _pickup!,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+          infoWindow: const InfoWindow(title: 'Pickup Location'),
+        ),
+      );
+    }
+    
+    if (_destination != null) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('destination'),
+          position: _destination!,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          infoWindow: const InfoWindow(title: 'Destination'),
+        ),
+      );
+    }
+    
+    if (_route.isNotEmpty) {
+      polylines.add(
+        Polyline(
+          polylineId: const PolylineId('route'),
+          points: _route,
+          color: Colors.deepPurple,
+          width: 5,
+        ),
+      );
+    }
+    
+    setState(() {
+      _markers = markers;
+      _polylines = polylines;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final center = _pickup ?? const LatLng(12.9716, 77.5946);
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.deepPurple,
+        foregroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+        ),
+        title: const Text(
+          'Your Route',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+            fontSize: 20,
+            letterSpacing: -0.5,
+          ),
+        ),
+        actions: [
+          if (_distanceKm != null && _durationMin != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Center(
+                child: Text(
+                  '${_distanceKm!.toStringAsFixed(1)} km • ${_durationMin!.toStringAsFixed(0)} min',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Row(
+              children: [
+                // Map Section (Left side)
+                Expanded(
+                  flex: 2,
+                  child: Stack(
+                    children: [
+                      GoogleMap(
+                        onMapCreated: (GoogleMapController controller) {
+                          _mapController = controller;
+                          _updateMarkersAndPolylines();
+                        },
+                        initialCameraPosition: CameraPosition(
+                          target: center,
+                          zoom: 13,
+                        ),
+                        markers: _markers,
+                        polylines: _polylines,
+                        mapType: MapType.normal,
+                        myLocationEnabled: true,
+                        myLocationButtonEnabled: true,
+                        zoomControlsEnabled: true,
+                      ),
+                      if (_error != null)
+                        Positioned.fill(
+                          child: Container(
+                            color: Colors.red.shade50,
+                            child: Center(
+                              child: Material(
+                                color: Colors.white,
+                                elevation: 8,
+                                borderRadius: BorderRadius.circular(16),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24.0),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.error_outline,
+                                        color: Colors.red.shade600,
+                                        size: 48,
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        'Map Loading Error',
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.red.shade700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        _error!,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.black87,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      ElevatedButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _error = null;
+                                            _loading = true;
+                                          });
+                                          _init();
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red.shade600,
+                                          foregroundColor: Colors.white,
+                                        ),
+                                        child: const Text('Retry'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                // Available Drivers Section (Right side)
+                Expanded(
+                  flex: 1,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [const Color(0xFFFAFAFA), Colors.grey.shade50],
+                      ),
+                      border: Border(
+                        left: BorderSide(color: Colors.grey.shade200, width: 1),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 10,
+                          offset: const Offset(-2, 0),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                const Color(0xFF1A1A2E),
+                                const Color(0xFF16213E),
+                                Colors.deepPurple.shade800,
+                              ],
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.15),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 50,
+                                height: 50,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      Colors.amber,
+                                      Colors.amber.shade600,
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.amber.withValues(
+                                        alpha: 0.3,
+                                      ),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.local_taxi,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              const Expanded(
+                                child: Text(
+                                  'Available Drivers',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    letterSpacing: -0.5,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(child: _buildAvailableDriversList()),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  // Fetch available drivers from Firestore
+  Future<List<Driver>> _getAvailableDrivers() async {
+    try {
+      final driversData = await FirestoreService.getAvailableDrivers();
+      return driversData.map((data) => Driver.fromFirestore(data)).toList();
+    } catch (e) {
+      print('Error fetching drivers: $e');
+      // Return empty list on error
+      return [];
+    }
+  }
+
+  // Calculate fare based on car model rate and actual ride distance
+  // Formula: Base Fare + (Distance in KM × Per KM Rate)
+  double _calculateFare(Driver driver, double distanceKm) {
+    return driver.baseFare + (distanceKm * driver.perKmRate);
+  }
+
+  Widget _buildAvailableDriversList() {
+    return FutureBuilder<List<Driver>>(
+      future: _getAvailableDrivers(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: CircularProgressIndicator(color: Colors.deepPurple),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Failed to load drivers',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Please try again later',
+                    style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final drivers = snapshot.data ?? [];
+
+        if (drivers.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.local_taxi_outlined,
+                    color: Colors.grey,
+                    size: 48,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No drivers available',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Please try again later',
+                    style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: drivers.length,
+          itemBuilder: (context, index) {
+            final driver = drivers[index];
+            return _buildDriverCard(driver);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildDriverCard(Driver driver) {
+    // Use distance from ride data if available, otherwise fallback to driver distance
+    final distanceKm = _distanceKm ?? driver.distance;
+    final fare = _calculateFare(driver, distanceKm);
+
+    // Debug information (can be removed in production)
+    print('Fare calculation for ${driver.carModel}:');
+    print('  - Base Fare: ₹${driver.baseFare}');
+    print('  - Per KM Rate: ₹${driver.perKmRate}');
+    print('  - Distance: ${distanceKm.toStringAsFixed(2)} km');
+    print('  - Total Fare: ₹${fare.toStringAsFixed(2)}');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20, left: 16, right: 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Colors.white, Colors.grey.shade50],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+          BoxShadow(
+            color: Colors.deepPurple.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.8),
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.deepPurple.withValues(alpha: 0.15),
+                      Colors.deepPurple.withValues(alpha: 0.25),
+                    ],
+                  ),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.deepPurple.withValues(alpha: 0.2),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.person,
+                  color: Colors.deepPurple,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      driver.name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1A1A2E),
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.star, color: Colors.amber, size: 16),
+                        const SizedBox(width: 4),
+                        Text(
+                          driver.rating.toString(),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Colors.grey.shade50, Colors.white],
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200, width: 1),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Car Model',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      driver.carModel,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1A1A2E),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Distance',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      '${distanceKm.toStringAsFixed(1)} km',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1A1A2E),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Fare',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      '₹${fare.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.deepPurple,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                // Handle driver selection
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Selected ${driver.name} - ${driver.carModel}',
+                    ),
+                    backgroundColor: Colors.deepPurple,
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+                shadowColor: Colors.transparent,
+              ),
+              child: const Text(
+                'Select Driver',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Driver model class
+class Driver {
+  final String name;
+  final String carModel;
+  final String carNumber;
+  final double rating;
+  final double distance; // in kilometers
+  final double baseFare;
+  final double perKmRate;
+  final String? imageUrl;
+  final String? userId;
+  final String? email;
+  final String? phoneNumber;
+
+  Driver({
+    required this.name,
+    required this.carModel,
+    required this.carNumber,
+    required this.rating,
+    required this.distance,
+    required this.baseFare,
+    required this.perKmRate,
+    this.imageUrl,
+    this.userId,
+    this.email,
+    this.phoneNumber,
+  });
+
+  // Constructor to create Driver from Firestore data
+  factory Driver.fromFirestore(Map<String, dynamic> data) {
+    // Calculate distance based on current location (simplified for demo)
+    // In real app, you would calculate distance from user's location
+    final rating = (data['rating'] as num?)?.toDouble() ?? 0.0;
+    final distance = (data['distance'] as num?)?.toDouble() ?? (2.0 + rating);
+
+    // Calculate fare based on car model
+    double baseFare = 50.0;
+    double perKmRate = 12.0;
+
+    final carModel = (data['carModel'] as String?) ?? 'Unknown';
+    switch (carModel.toLowerCase()) {
+      case 'honda city':
+        baseFare = 60.0;
+        perKmRate = 15.0;
+        break;
+      case 'toyota innova':
+        baseFare = 80.0;
+        perKmRate = 18.0;
+        break;
+      case 'hyundai creta':
+        baseFare = 70.0;
+        perKmRate = 16.0;
+        break;
+      case 'maruti swift':
+        baseFare = 50.0;
+        perKmRate = 12.0;
+        break;
+      default:
+        baseFare = 60.0;
+        perKmRate = 14.0;
+    }
+
+    return Driver(
+      name: data['name'] as String? ?? 'Unknown Driver',
+      carModel: carModel,
+      carNumber: data['carNumber'] as String? ?? 'Unknown',
+      rating: (data['rating'] as num?)?.toDouble() ?? 4.5,
+      distance: distance,
+      baseFare: baseFare,
+      perKmRate: perKmRate,
+      imageUrl: data['profileImageUrl'] as String?,
+      userId: data['id'] as String?,
+      email: data['email'] as String?,
+      phoneNumber: data['phoneNumber'] as String?,
+    );
+  }
+}

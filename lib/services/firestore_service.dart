@@ -139,6 +139,60 @@ class FirestoreService {
     }
   }
 
+  // Update ride with driver information
+  static Future<void> updateRideWithDriver({
+    required String rideId,
+    required String driverId,
+    required String driverName,
+    required String carModel,
+    required double fare,
+    String? carNumber,
+    double? rating,
+    double? distance,
+    String? driverEmail,
+    String? driverPhoneNumber,
+    String? driverImageUrl,
+  }) async {
+    try {
+      final update = <String, dynamic>{
+        'driverId': driverId,
+        'driver': {
+          'id': driverId,
+          'name': driverName,
+          'email': driverEmail,
+          'phoneNumber': driverPhoneNumber,
+          'rating': rating ?? 0.0,
+          'imageUrl': driverImageUrl,
+        },
+        'vehicle': {'carModel': carModel, 'carNumber': carNumber},
+        'fare': fare,
+        'distance': distance,
+        'status': 'matched',
+        'matchedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      await _firestore.collection(ridesCollection).doc(rideId).update(update);
+      print('✅ Ride updated with driver information');
+    } catch (e) {
+      print('❌ Error updating ride with driver: $e');
+      throw Exception('Failed to update ride with driver: $e');
+    }
+  }
+
+  // Update ride status
+  static Future<void> updateRideStatus(String rideId, String status) async {
+    try {
+      await _firestore.collection(ridesCollection).doc(rideId).update({
+        'status': status,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      print('✅ Ride status updated to: $status');
+    } catch (e) {
+      print('❌ Error updating ride status: $e');
+      throw Exception('Failed to update ride status: $e');
+    }
+  }
+
   // Validate license ID and check expiry
   static Future<Map<String, dynamic>?> validateLicense(String licenseId) async {
     try {

@@ -24,6 +24,17 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	
+	<!-- Google Maps API Key -->
+	<key>io.flutter.embedded_views_preview</key>
+	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app needs access to location to show your position on the map.</string>
+	
+	<!-- Add Google Maps API Key -->
+	<key>GMSApiKey</key>
+	<string>AIzaSyC3fancRF9cg1Jfy-e9Ae0b4tL2Ym5-3b0</string>
+	
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
