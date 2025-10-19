@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 import 'services/firestore_service.dart';
 import 'config/app_config.dart';
@@ -28,7 +29,7 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  GoogleMapController? _mapController;
+  MapController? _mapController;
   bool _loading = true;
   String? _error;
 
@@ -128,23 +129,26 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<LatLng?> _geocodeAddress(String address) async {
     try {
-      // Use Google Geocoding API with your API key
+      // Use Nominatim API for geocoding (OSM alternative)
       final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/geocode/json'
-        '?address=${Uri.encodeComponent(address)}'
-        '&key=${AppConfig.googleMapsApiKey}',
+        'https://nominatim.openstreetmap.org/search'
+        '?q=${Uri.encodeComponent(address)}'
+        '&format=json'
+        '&limit=1',
       );
-      final resp = await http.get(url);
+      final resp = await http.get(
+        url,
+        headers: {
+          'User-Agent': 'RideMate/1.0', // Required by Nominatim
+        },
+      );
       if (resp.statusCode != 200) return null;
-      final data = json.decode(resp.body) as Map<String, dynamic>;
-      final results = data['results'] as List?;
-      if (results == null || results.isEmpty) return null;
+      final data = json.decode(resp.body) as List;
+      if (data.isEmpty) return null;
 
-      final result = results.first as Map<String, dynamic>;
-      final geometry = result['geometry'] as Map<String, dynamic>;
-      final location = geometry['location'] as Map<String, dynamic>;
-      final lat = (location['lat'] as num).toDouble();
-      final lng = (location['lng'] as num).toDouble();
+      final result = data.first as Map<String, dynamic>;
+      final lat = double.parse(result['lat'] as String);
+      final lng = double.parse(result['lon'] as String);
       return LatLng(lat, lng);
     } catch (_) {
       return null;
@@ -212,43 +216,36 @@ class _MapScreenState extends State<MapScreen> {
         maxLng = maxLng > point.longitude ? maxLng : point.longitude;
       }
 
-      _mapController!.animateCamera(
-        CameraUpdate.newLatLngBounds(
-          LatLngBounds(
-            southwest: LatLng(minLat, minLng),
-            northeast: LatLng(maxLat, maxLng),
-          ),
-          100.0,
-        ),
+      _mapController!.move(
+        LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2),
+        _calculateZoomLevel(minLat, maxLat, minLng, maxLng),
       );
       return;
     }
 
     if (_pickup != null && _destination != null) {
-      _mapController!.animateCamera(
-        CameraUpdate.newLatLngBounds(
-          LatLngBounds(
-            southwest: LatLng(
-              _pickup!.latitude < _destination!.latitude
-                  ? _pickup!.latitude
-                  : _destination!.latitude,
-              _pickup!.longitude < _destination!.longitude
-                  ? _pickup!.longitude
-                  : _destination!.longitude,
-            ),
-            northeast: LatLng(
-              _pickup!.latitude > _destination!.latitude
-                  ? _pickup!.latitude
-                  : _destination!.latitude,
-              _pickup!.longitude > _destination!.longitude
-                  ? _pickup!.longitude
-                  : _destination!.longitude,
-            ),
-          ),
-          100.0,
-        ),
-      );
+      final centerLat = (_pickup!.latitude + _destination!.latitude) / 2;
+      final centerLng = (_pickup!.longitude + _destination!.longitude) / 2;
+      _mapController!.move(LatLng(centerLat, centerLng), 13);
     }
+  }
+
+  double _calculateZoomLevel(
+    double minLat,
+    double maxLat,
+    double minLng,
+    double maxLng,
+  ) {
+    final latDiff = (maxLat - minLat).abs();
+    final lngDiff = (maxLng - minLng).abs();
+    final maxDiff = latDiff > lngDiff ? latDiff : lngDiff;
+
+    // Simple zoom calculation - you might want to refine this
+    if (maxDiff < 0.001) return 17.0;
+    if (maxDiff < 0.01) return 15.0;
+    if (maxDiff < 0.1) return 13.0;
+    if (maxDiff < 1.0) return 11.0;
+    return 9.0;
   }
 
   void _updateMarkersAndPolylines() {
@@ -258,10 +255,10 @@ class _MapScreenState extends State<MapScreen> {
     if (_pickup != null) {
       markers.add(
         Marker(
-          markerId: const MarkerId('pickup'),
-          position: _pickup!,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-          infoWindow: const InfoWindow(title: 'Pickup Location'),
+          width: 80.0,
+          height: 80.0,
+          point: _pickup!,
+          child: Icon(Icons.location_on, size: 40.0, color: Colors.blue),
         ),
       );
     }
@@ -269,22 +266,17 @@ class _MapScreenState extends State<MapScreen> {
     if (_destination != null) {
       markers.add(
         Marker(
-          markerId: const MarkerId('destination'),
-          position: _destination!,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: const InfoWindow(title: 'Destination'),
+          width: 80.0,
+          height: 80.0,
+          point: _destination!,
+          child: Icon(Icons.location_on, size: 40.0, color: Colors.red),
         ),
       );
     }
 
     if (_route.isNotEmpty) {
       polylines.add(
-        Polyline(
-          polylineId: const PolylineId('route'),
-          points: _route,
-          color: Colors.deepPurple,
-          width: 5,
-        ),
+        Polyline(points: _route, color: Colors.deepPurple, strokeWidth: 5.0),
       );
     }
 
@@ -341,28 +333,26 @@ class _MapScreenState extends State<MapScreen> {
                   flex: 2,
                   child: Stack(
                     children: [
-                      GoogleMap(
-                        onMapCreated: (GoogleMapController controller) {
-                          _mapController = controller;
-                          _updateMarkersAndPolylines();
-                        },
-                        initialCameraPosition: CameraPosition(
-                          target: center,
-                          zoom: 13,
+                      FlutterMap(
+                        mapController: _mapController ??= MapController(),
+                        options: MapOptions(
+                          initialCenter: center,
+                          initialZoom: 13.0,
+                          maxZoom: 18.0,
+                          minZoom: 2.0,
+                          interactionOptions: const InteractionOptions(
+                            flags: InteractiveFlag.all,
+                          ),
                         ),
-                        markers: _markers,
-                        polylines: _polylines,
-                        mapType: MapType.normal,
-                        myLocationEnabled: true,
-                        myLocationButtonEnabled: true,
-                        zoomControlsEnabled: true,
-                        trafficEnabled: true,
-                        onTap: (LatLng position) {
-                          // Handle map tap if needed
-                        },
-                        onCameraMove: (CameraPosition position) {
-                          // Handle camera move if needed
-                        },
+                        children: [
+                          TileLayer(
+                            urlTemplate:
+                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            userAgentPackageName: 'com.example.ridemate',
+                          ),
+                          PolylineLayer(polylines: _polylines.toList()),
+                          MarkerLayer(markers: _markers.toList()),
+                        ],
                       ),
                       if (_error != null)
                         Positioned.fill(

@@ -386,22 +386,204 @@ class FirestoreService {
     }
   }
 
-  static Future<List<Map<String, dynamic>>> getRidesForDriver(
-    String driverId,
+  // Get rides for a specific user (rider)
+  static Future<List<Map<String, dynamic>>> getRidesForUser(
+    String userId,
   ) async {
     try {
+      print('🔍 Fetching rides for user: $userId');
+
+      // Query ONLY by riderId to avoid composite index requirements
+      final querySnapshot = await _firestore
+          .collection(ridesCollection)
+          .where('riderId', isEqualTo: userId)
+          .get();
+
+      print('📊 Raw query returned ${querySnapshot.docs.length} documents');
+
+      // Map docs to list and sort in memory to avoid index requirements
+      final rides =
+          querySnapshot.docs
+              .map((doc) => {'id': doc.id, ...doc.data()})
+              .toList()
+            ..sort((a, b) {
+              // Sort by createdAt descending in memory
+              final aTimestamp = a['createdAt'];
+              final bTimestamp = b['createdAt'];
+              if (aTimestamp is Timestamp && bTimestamp is Timestamp) {
+                return bTimestamp.compareTo(aTimestamp);
+              }
+              return 0;
+            });
+
+      print('📋 Filtered rides count: ${rides.length}');
+
+      // Print details of each ride for debugging
+      if (rides.isNotEmpty) {
+        print('📋 Detailed ride information:');
+        for (var i = 0; i < rides.length; i++) {
+          final ride = rides[i];
+          print('  Ride $i:');
+          print('    ID: ${ride['id']}');
+          print('    Status: ${ride['status'] ?? 'N/A'}');
+          print('    Rider ID: ${ride['riderId'] ?? 'N/A'}');
+          print('    Rider Name: ${ride['rider']?['name'] ?? 'N/A'}');
+          print('    Pickup: ${ride['pickupAddress'] ?? 'N/A'}');
+          print('    Destination: ${ride['destinationAddress'] ?? 'N/A'}');
+          print('    Fare: ${ride['fare'] ?? 'N/A'}');
+          print('    Created At: ${ride['createdAt'] ?? 'N/A'}');
+        }
+      }
+
+      return rides;
+    } catch (e, stackTrace) {
+      print('❌ Error fetching rides for user $userId: $e');
+      print('_STACK TRACE: $stackTrace');
+      return [];
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getRidesForDriver(
+    String driverId, {
+    String? driverEmail,
+    List<String>? allowedStatuses,
+  }) async {
+    try {
+      print('🔍 Fetching rides for driver: $driverId');
+      if (driverEmail != null) {
+        print('📧 Filtering by driver email: $driverEmail');
+      }
+      if (allowedStatuses != null && allowedStatuses.isNotEmpty) {
+        print('📌 Allowed statuses: ${allowedStatuses.join(', ')}');
+      }
+
+      // Query ONLY by driverId to avoid composite index requirements
+      // We'll do all other filtering in memory
       final querySnapshot = await _firestore
           .collection(ridesCollection)
           .where('driverId', isEqualTo: driverId)
-          .orderBy('createdAt', descending: true)
+          .get(); // Removed orderBy to avoid any potential index issues
+
+      print('📊 Raw query returned ${querySnapshot.docs.length} documents');
+
+      // Filter in memory to avoid composite index requirements
+      final rides =
+          querySnapshot.docs
+              .map((doc) {
+                // Safely extract data from document
+                final data = doc.data();
+                return {
+                  'id': doc.id,
+                  ...?data, // Use null-aware spread operator
+                };
+              })
+              .where((ride) {
+                try {
+                  // Filter by status if provided
+                  if (allowedStatuses != null && allowedStatuses.isNotEmpty) {
+                    final rideStatus = ride['status'] as String?;
+                    if (rideStatus == null ||
+                        !allowedStatuses.contains(rideStatus)) {
+                      return false;
+                    }
+                  }
+
+                  // Filter by email if provided
+                  if (driverEmail != null) {
+                    final rideDriverEmail =
+                        ride['driver']?['email'] as String? ??
+                        ride['driverEmail'] as String?;
+                    if (rideDriverEmail != driverEmail) {
+                      return false;
+                    }
+                  }
+
+                  return true;
+                } catch (e) {
+                  print('⚠️ Error filtering ride ${ride['id']}: $e');
+                  return false; // Exclude rides that cause filtering errors
+                }
+              })
+              // Sort in memory to maintain the same order
+              .toList()
+            ..sort((a, b) {
+              final aTimestamp = a['createdAt'];
+              final bTimestamp = b['createdAt'];
+              if (aTimestamp is Timestamp && bTimestamp is Timestamp) {
+                return bTimestamp.compareTo(aTimestamp);
+              }
+              return 0;
+            });
+
+      print('📋 Filtered rides count: ${rides.length}');
+
+      // Print details of each ride for debugging
+      if (rides.isNotEmpty) {
+        print('📋 Detailed ride information:');
+        for (var i = 0; i < rides.length; i++) {
+          final ride = rides[i];
+          print('  Ride $i:');
+          print('    ID: ${ride['id']}');
+          print('    Status: ${ride['status'] ?? 'N/A'}');
+          print('    Driver ID: ${ride['driverId'] ?? 'N/A'}');
+          print('    Rider Name: ${ride['rider']?['name'] ?? 'N/A'}');
+          print('    Pickup: ${ride['pickupAddress'] ?? 'N/A'}');
+          print('    Destination: ${ride['destinationAddress'] ?? 'N/A'}');
+          print('    Fare: ${ride['fare'] ?? 'N/A'}');
+          print('    Created At: ${ride['createdAt'] ?? 'N/A'}');
+        }
+      } else {
+        print('⚠️ No rides found matching the criteria after filtering');
+        // Let's also check what rides exist for this driver with any status
+        _checkDriverRidesWithAnyStatus(driverId);
+      }
+
+      return rides;
+    } catch (e, stackTrace) {
+      print('❌ Error fetching rides for driver $driverId: $e');
+      print('_STACK TRACE: $stackTrace');
+      return [];
+    }
+  }
+
+  // Add this helper method to check rides with any status
+  static Future<void> _checkDriverRidesWithAnyStatus(String driverId) async {
+    try {
+      print('🔍 Checking rides for driver $driverId with ANY status...');
+      final allRides = await _firestore
+          .collection(ridesCollection)
+          .where('driverId', isEqualTo: driverId)
           .get();
 
-      return querySnapshot.docs
-          .map((doc) => {'id': doc.id, ...doc.data()})
-          .toList();
+      print(
+        '📊 Found ${allRides.docs.length} rides for driver $driverId with any status',
+      );
+
+      if (allRides.docs.isNotEmpty) {
+        final statusMap = <String, int>{};
+
+        print('📋 Rides breakdown by status:');
+        for (final doc in allRides.docs) {
+          final data = doc.data();
+          final status = data['status'] as String? ?? 'unknown';
+          statusMap[status] = (statusMap[status] ?? 0) + 1;
+
+          print('  Ride ID: ${doc.id}');
+          print('    Status: $status');
+          print('    Rider: ${data['rider']?['name'] ?? 'N/A'}');
+          print('    Pickup: ${data['pickupAddress'] ?? 'N/A'}');
+          print('    Destination: ${data['destinationAddress'] ?? 'N/A'}');
+        }
+
+        print('📊 Status summary:');
+        statusMap.forEach((status, count) {
+          print('  $status: $count rides');
+        });
+      } else {
+        print('⚠️ No rides found for driver $driverId with any status');
+      }
     } catch (e) {
-      print('❌ Error fetching rides for driver: $e');
-      return [];
+      print('❌ Error checking rides with any status: $e');
     }
   }
 
@@ -469,6 +651,36 @@ class FirestoreService {
     } catch (e) {
       print('❌ Error updating ride status: $e');
       throw Exception('Failed to update ride status: $e');
+    }
+  }
+
+  // Update ride with payment information
+  static Future<void> updateRideWithPayment({
+    required String rideId,
+    required bool isPaid,
+    String? paymentMethod,
+    String? transactionId,
+  }) async {
+    try {
+      final updateData = <String, dynamic>{
+        'isPaid': isPaid,
+        'paymentMethod': paymentMethod,
+        'transactionId': transactionId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      // Remove null values
+      updateData.removeWhere((key, value) => value == null);
+
+      await _firestore
+          .collection(ridesCollection)
+          .doc(rideId)
+          .update(updateData);
+
+      print('✅ Ride payment information updated successfully');
+    } catch (e) {
+      print('❌ Error updating ride payment information: $e');
+      throw Exception('Failed to update ride payment information: $e');
     }
   }
 
@@ -948,10 +1160,145 @@ class FirestoreService {
           .get();
       print('📊 Found ${driversSnapshot.docs.length} driver documents');
 
+      // Test 6: Check rides collection
+      print('🚕 Checking rides collection...');
+      final ridesSnapshot = await _firestore
+          .collection(ridesCollection)
+          .limit(5)
+          .get();
+      print('📊 Found ${ridesSnapshot.docs.length} ride documents');
+
+      if (ridesSnapshot.docs.isNotEmpty) {
+        print('🔍 Sample rides:');
+        for (final doc in ridesSnapshot.docs) {
+          final data = doc.data();
+          print('  - Ride ID: ${doc.id}');
+          print('    Status: ${data['status'] ?? 'N/A'}');
+          print('    Driver ID: ${data['driverId'] ?? 'N/A'}');
+          print('    Rider: ${data['rider']?['name'] ?? 'N/A'}');
+          print('    Pickup: ${data['pickupAddress'] ?? 'N/A'}');
+          print('    Destination: ${data['destinationAddress'] ?? 'N/A'}');
+          print('    Fare: ${data['fare'] ?? 'N/A'}');
+          print('    ---');
+        }
+      }
+
       print('✅ Firestore debug completed successfully');
     } catch (e) {
       print('❌ Error during Firestore debug: $e');
       rethrow;
+    }
+  }
+
+  // Test method to fetch all rides (for debugging purposes)
+  static Future<List<Map<String, dynamic>>> getAllRides() async {
+    try {
+      print('🔍 Fetching all rides (no filters)');
+      final querySnapshot = await _firestore
+          .collection(ridesCollection)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      print('📊 Found ${querySnapshot.docs.length} total rides');
+
+      final rides = querySnapshot.docs
+          .map((doc) => {'id': doc.id, ...doc.data()})
+          .toList();
+
+      // Print details of each ride for debugging
+      for (var i = 0; i < rides.length && i < 5; i++) {
+        final ride = rides[i];
+        print(
+          'Ride $i: ID=${ride['id']}, Status=${ride['status']}, DriverId=${ride['driverId']}, Rider=${ride['rider']?['name']}',
+        );
+      }
+
+      return rides;
+    } catch (e) {
+      print('❌ Error fetching all rides: $e');
+      return [];
+    }
+  }
+
+  // Comprehensive debug method to check rides for a specific driver
+  static Future<void> debugRidesForDriver(String driverId) async {
+    try {
+      print('🔍 Debugging rides for driver: $driverId');
+
+      // 1. Check if driver document exists
+      final driverDoc = await _firestore
+          .collection(driversCollection)
+          .doc(driverId)
+          .get();
+
+      if (driverDoc.exists) {
+        print('✅ Driver document found');
+        final driverData = driverDoc.data()!;
+        print('  Name: ${driverData['name']}');
+        print('  Email: ${driverData['email']}');
+      } else {
+        print('❌ Driver document NOT found for ID: $driverId');
+        return;
+      }
+
+      // 2. Count total rides in collection
+      final totalRidesSnapshot = await _firestore
+          .collection(ridesCollection)
+          .limit(1)
+          .get();
+      print('📊 Total rides in collection: ${totalRidesSnapshot.size}');
+
+      // 3. Check rides with this driver ID (any status)
+      final allDriverRides = await _firestore
+          .collection(ridesCollection)
+          .where('driverId', isEqualTo: driverId)
+          .get();
+      print(
+        '🚗 Rides with driverId=$driverId (any status): ${allDriverRides.size}',
+      );
+
+      // Print details of these rides
+      for (final doc in allDriverRides.docs) {
+        final data = doc.data();
+        print('  Ride ID: ${doc.id}');
+        print('    Status: ${data['status']}');
+        print('    Rider: ${data['rider']?['name'] ?? 'N/A'}');
+        print('    Pickup: ${data['pickupAddress'] ?? 'N/A'}');
+        print('    Destination: ${data['destinationAddress'] ?? 'N/A'}');
+      }
+
+      // 4. Check rides with this driver ID and status='requested'
+      final requestedRides = await _firestore
+          .collection(ridesCollection)
+          .where('driverId', isEqualTo: driverId)
+          .where('status', isEqualTo: 'requested')
+          .get();
+      print(
+        '📬 Rides with driverId=$driverId and status=requested: ${requestedRides.size}',
+      );
+
+      // Print details of these rides
+      for (final doc in requestedRides.docs) {
+        final data = doc.data();
+        print('  Ride ID: ${doc.id}');
+        print('    Rider: ${data['rider']?['name'] ?? 'N/A'}');
+        print('    Pickup: ${data['pickupAddress'] ?? 'N/A'}');
+        print('    Destination: ${data['destinationAddress'] ?? 'N/A'}');
+      }
+
+      // 5. Check rides with this driver ID and status='accepted'
+      final acceptedRides = await _firestore
+          .collection(ridesCollection)
+          .where('driverId', isEqualTo: driverId)
+          .where('status', isEqualTo: 'accepted')
+          .get();
+      print(
+        '👍 Rides with driverId=$driverId and status=accepted: ${acceptedRides.size}',
+      );
+
+      print('✅ Debug completed');
+    } catch (e) {
+      print('❌ Error during driver rides debug: $e');
     }
   }
 

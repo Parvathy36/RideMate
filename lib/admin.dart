@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/auth_service.dart';
 import 'services/firestore_service.dart';
 import 'services/admin_service.dart';
@@ -1146,12 +1147,425 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
 
   // Rides content
   Widget _buildRidesContent() {
-    return const Center(
-      child: Text(
-        'Rides Management\nComing Soon...',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 18, color: Colors.grey),
-      ),
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: FirestoreService.getAllRides(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Error loading rides: ${snapshot.error}',
+              style: const TextStyle(color: Colors.red),
+            ),
+          );
+        }
+
+        final rides = snapshot.data ?? [];
+
+        if (rides.isEmpty) {
+          return const Center(
+            child: Text(
+              'No rides found',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+          );
+        }
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    topRight: Radius.circular(16),
+                  ),
+                  border: Border(
+                    bottom: BorderSide(color: Colors.grey.shade200, width: 1),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.deepPurple,
+                            Colors.deepPurple.shade700,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.directions_car,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Rides Management',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1A1A2E),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${rides.length} rides',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: IconButton(
+                        onPressed: () {
+                          // Refresh the rides data
+                          setState(() {});
+                        },
+                        icon: Icon(
+                          Icons.refresh,
+                          color: Colors.grey.shade600,
+                          size: 24,
+                        ),
+                        tooltip: 'Refresh Data',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Rides List
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: rides.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final ride = rides[index];
+                    final rideId = ride['id'] ?? 'N/A';
+                    final status = ride['status'] ?? 'unknown';
+                    final rider = ride['rider'] ?? {};
+                    final riderName = rider['name'] ?? 'Unknown Rider';
+                    final pickup = ride['pickupAddress'] ?? 'N/A';
+                    final destination = ride['destinationAddress'] ?? 'N/A';
+                    final fare = ride['fare'] ?? 0.0;
+                    final driver = ride['driver'];
+                    final driverName = driver != null
+                        ? (driver['name'] ?? 'N/A')
+                        : 'Unassigned';
+                    final carModel = driver != null
+                        ? (driver['carModel'] ?? 'N/A')
+                        : 'N/A';
+                    final createdAt = ride['createdAt'];
+
+                    // Format creation date
+                    String formattedDate = 'N/A';
+                    if (createdAt is Timestamp) {
+                      final date = createdAt.toDate();
+                      formattedDate =
+                          '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+                    }
+
+                    // Get status color
+                    Color statusColor;
+                    switch (status.toLowerCase()) {
+                      case 'requested':
+                        statusColor = Colors.orange;
+                        break;
+                      case 'accepted':
+                        statusColor = Colors.blue;
+                        break;
+                      case 'enroute':
+                        statusColor = Colors.purple;
+                        break;
+                      case 'completed':
+                        statusColor = Colors.green;
+                        break;
+                      case 'cancelled':
+                        statusColor = Colors.red;
+                        break;
+                      default:
+                        statusColor = Colors.grey;
+                    }
+
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Ride header
+                          Row(
+                            children: [
+                              CircleAvatar(
+                                backgroundColor: Colors.deepPurple.shade100,
+                                child: Icon(
+                                  Icons.directions_car,
+                                  color: Colors.deepPurple.shade600,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Ride #$rideId'.substring(0, 8),
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '$riderName',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: statusColor.withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Text(
+                                  status.toUpperCase(),
+                                  style: TextStyle(
+                                    color: statusColor,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          // Ride details
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.location_on,
+                                      size: 16,
+                                      color: Colors.green,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        pickup,
+                                        style: const TextStyle(fontSize: 13),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.arrow_downward,
+                                      size: 16,
+                                      color: Colors.grey,
+                                    ),
+                                    SizedBox(width: 8),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.location_on,
+                                      size: 16,
+                                      color: Colors.red,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        destination,
+                                        style: const TextStyle(fontSize: 13),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          // Driver and fare info
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              // Driver info
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Driver',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.person,
+                                          size: 14,
+                                          color: Colors.deepPurple,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            driverName,
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (driver != null) ...[
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.local_taxi,
+                                            size: 14,
+                                            color: Colors.deepPurple,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Expanded(
+                                            child: Text(
+                                              carModel,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey[600],
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+
+                              // Fare and date
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  const Text(
+                                    'Fare',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                  Text(
+                                    '₹${fare.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  const Text(
+                                    'Date',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                  Text(
+                                    formattedDate,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -1656,7 +2070,7 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
   Future<void> _rejectDriver(String driverId) async {
     // Show rejection message dialog
     final String? rejectionMessage = await _showRejectionMessageDialog();
-    
+
     if (rejectionMessage == null) {
       // User cancelled the dialog
       return;
@@ -1693,7 +2107,7 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
 
   Future<String?> _showRejectionMessageDialog() async {
     final TextEditingController messageController = TextEditingController();
-    
+
     return showDialog<String>(
       context: context,
       builder: (BuildContext context) {
@@ -1897,7 +2311,8 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
                   '₹${driver['totalEarnings'] ?? 0.0}',
                 ),
                 // Show rejection message if driver was rejected
-                if (!(driver['isApproved'] ?? false) && driver['rejectionMessage'] != null) ...[
+                if (!(driver['isApproved'] ?? false) &&
+                    driver['rejectionMessage'] != null) ...[
                   const SizedBox(height: 8),
                   const Divider(),
                   const SizedBox(height: 8),
@@ -1913,7 +2328,11 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.warning, color: Colors.red.shade600, size: 18),
+                            Icon(
+                              Icons.warning,
+                              color: Colors.red.shade600,
+                              size: 18,
+                            ),
                             const SizedBox(width: 8),
                             const Text(
                               'Rejection Reason',

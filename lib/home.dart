@@ -4,6 +4,10 @@ import 'map_screen.dart';
 import 'services/firestore_service.dart';
 import 'package:flutter/foundation.dart';
 // Removed google_place to avoid http version conflict
+import 'user_profile_page.dart';
+import 'ride_history_page.dart';
+import 'rides_booking.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -22,6 +26,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   final TextEditingController _destinationController = TextEditingController();
   // Autocomplete for web removed; simple text fields are used
   String _selectedRideType = 'Solo'; // Default to Solo
+  late Razorpay _razorpay;
 
   @override
   void initState() {
@@ -44,9 +49,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
         );
 
+    // Initialize Razorpay
+    _razorpay = Razorpay();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
+    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+
     // Start animations
     _fadeController.forward();
     _slideController.forward();
+
+    // Check for rides when user logs in
+    _checkForRides();
 
     // Initialize Places for web (optional)
     // Web Places autocomplete removed
@@ -58,7 +72,228 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _slideController.dispose();
     _pickupController.dispose();
     _destinationController.dispose();
+    _razorpay.clear(); // Clear Razorpay listeners
     super.dispose();
+  }
+
+  // Show payment dialog that cannot be closed until payment is successful
+  Future<void> _showPaymentDialog(Map<String, dynamic> ride) async {
+    final rideId = ride['id'] as String;
+    final fare = ride['fare'] as num? ?? 0;
+    final pickup = ride['pickupAddress'] as String? ?? 'Unknown pickup';
+    final destination = ride['destinationAddress'] as String? ?? 'Unknown destination';
+    final driver = ride['driver'] as Map<String, dynamic>? ?? {};
+    final rideType = ride['rideType'] as String? ?? 'Solo';
+    
+    await showDialog(
+      context: context,
+      barrierDismissible: false, // Prevent dismissing by tapping outside
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1A1A2E),
+          title: const Text(
+            'Ride Booking Payment',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Your ride has been accepted!',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Pickup: $pickup',
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Destination: $destination',
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Total Fare: ₹${fare.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Please complete the payment to confirm your ride.',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () {
+                // Close the dialog
+                Navigator.of(context).pop();
+                
+                // Navigate to rides booking page
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => RidesBookingPage(
+                      rideId: rideId,
+                      driverDetails: driver,
+                      pickupAddress: pickup,
+                      destinationAddress: destination,
+                      fare: fare.toDouble(),
+                      rideType: rideType,
+                    ),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Pay Now'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Open Razorpay checkout
+  void _openCheckout(String rideId, double amount) {
+    var options = {
+      'key':
+          'rzp_test_RVQP1hirXQFCVn', // Provided test key
+      'amount': (amount * 100).toInt(), // Amount in paise
+      'name': 'RideMate',
+      'description': 'Ride Payment',
+      'prefill': {'contact': '', 'email': ''},
+      'external': {
+        'wallets': ['paytm'],
+      },
+    };
+
+    try {
+      _razorpay.open(options);
+    } catch (e) {
+      print('Error opening Razorpay: $e');
+      // Handle the MissingPluginException by showing an error message
+      if (e.toString().contains('MissingPluginException')) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Payment gateway not available.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Error opening payment gateway'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  // Handle payment success
+  void _handlePaymentSuccess(PaymentSuccessResponse response) {
+    print('Payment successful: ${response.paymentId}');
+
+    // Close the payment dialog
+    Navigator.of(context).pop();
+
+    // Show success message
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Payment successful! Your ride is confirmed.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
+  // Handle payment error
+  void _handlePaymentError(PaymentFailureResponse response) {
+    print('Payment error: ${response.message}');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Payment failed: ${response.message}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // Handle external wallet
+  void _handleExternalWallet(ExternalWalletResponse response) {
+    print('External wallet: ${response.walletName}');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Selected wallet: ${response.walletName}'),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    }
+  }
+
+  // Check for rides when user logs in
+  Future<void> _checkForRides() async {
+    try {
+      final user = _authService.currentUser;
+      if (user == null) return;
+
+      // Get rides for this user
+      final rides = await FirestoreService.getRidesForUser(user.uid);
+
+      // Check each ride for status
+      for (final ride in rides) {
+        final status = ride['status'] as String?;
+        final rideId = ride['id'] as String;
+
+        if (status == 'accepted') {
+          // Show payment dialog for accepted rides
+          if (mounted) {
+            _showPaymentDialog(ride);
+          }
+        } else if (status == 'rejected') {
+          // Show rejection message for rejected rides
+          if (mounted) {
+            _showRejectionMessage(ride);
+          }
+        }
+      }
+    } catch (e) {
+      print('Error checking for rides: $e');
+    }
+  }
+
+  // Show rejection message for rejected rides
+  void _showRejectionMessage(Map<String, dynamic> ride) {
+    final rejectionReason =
+        ride['rejectionReason'] as String? ?? 'No reason provided';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Your ride request was rejected: $rejectionReason'),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 5),
+      ),
+    );
   }
 
   void _signOut() async {
@@ -399,7 +634,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
-                        children: [_buildNavButton('Home', true, () {})],
+                        children: [
+                          _buildNavButton('Home', true, () {}),
+                          _buildNavButton('Ride History', false, () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const RideHistoryPage(),
+                              ),
+                            );
+                          }),
+                        ],
                       ),
                     ),
                   ),
@@ -435,6 +680,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         switch (value) {
                           case 'home':
                             // Already on home page
+                            break;
+                          case 'ride_history':
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const RideHistoryPage(),
+                              ),
+                            );
                             break;
                         }
                       },
@@ -1177,6 +1430,28 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
         ),
       ),
+      PopupMenuItem(
+        value: 'ride_history',
+        child: Container(
+          padding: EdgeInsets.symmetric(vertical: verticalPadding),
+          child: Row(
+            children: [
+              Icon(Icons.history, size: iconSize, color: const Color(0xFF1A1A2E)),
+              const SizedBox(width: 12),
+              Text(
+                'Ride History',
+                style: TextStyle(
+                  fontWeight: currentPage == 'ride_history'
+                      ? FontWeight.w600
+                      : FontWeight.w500,
+                  fontSize: fontSize,
+                  color: const Color(0xFF1A1A2E),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     ];
   }
 
@@ -1279,27 +1554,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         margin: EdgeInsets.only(right: rightMargin),
         child: TextButton.icon(
           onPressed: () {
-            // Show user profile dialog or navigate to profile page
-            showDialog(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: const Text('Profile'),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Name: ${user?.displayName ?? 'Not set'}'),
-                    const SizedBox(height: 8),
-                    Text('Email: ${user?.email ?? 'Not available'}'),
-                  ],
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Close'),
-                  ),
-                ],
-              ),
+            // Navigate to user profile page
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const UserProfilePage()),
             );
           },
           icon: Icon(

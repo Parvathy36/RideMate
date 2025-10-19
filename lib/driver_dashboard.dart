@@ -26,39 +26,47 @@ class _DriverDashboardState extends State<DriverDashboard>
   bool _hasShownImageUploadDialog = false;
   int _navIndex = 0;
 
-  List<Map<String, dynamic>> _rides = <Map<String, dynamic>>[];
-  bool _isRidesLoading = false;
-  String? _ridesError;
-
-  Future<void> _loadDriverRides({bool initialLoad = false}) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    if (!initialLoad) {
-      setState(() {
-        _isRidesLoading = true;
-        _ridesError = null;
-      });
-    }
-
+  Future<void> _loadDriverData() async {
     try {
-      final rides = await FirestoreService.getRidesForDriver(user.uid);
-      if (mounted) {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final usersRef = FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid);
+        final driversRef = FirebaseFirestore.instance
+            .collection('drivers')
+            .doc(user.uid);
+
+        // Fetch user and driver docs in parallel
+        final snapshots = await Future.wait([usersRef.get(), driversRef.get()]);
+        final userDoc = snapshots[0];
+        final driverDoc = snapshots[1];
+
+        // Merge data (driver doc takes precedence for driver-specific fields)
+        final merged = <String, dynamic>{};
+        if (userDoc.exists) merged.addAll(userDoc.data()!);
+        if (driverDoc.exists) merged.addAll(driverDoc.data()!);
+
         setState(() {
-          _rides = rides;
-          _isRidesLoading = false;
-          _ridesError = rides.isEmpty
-              ? 'No rides found for your account yet.'
-              : null;
+          _driverData = merged.isNotEmpty ? merged : null;
+          _isOnline =
+              (merged['isOnline'] ?? userDoc.data()?['isOnline'] ?? false)
+                  as bool;
+          _isLoading = false;
+        });
+
+        // Check if driver needs to upload images using merged data
+        _checkAndShowImageUploadDialog(merged);
+      } else {
+        setState(() {
+          _isLoading = false;
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isRidesLoading = false;
-          _ridesError = 'Failed to load rides: $e';
-        });
-      }
+      print('Error loading driver data: $e');
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
@@ -107,15 +115,20 @@ class _DriverDashboardState extends State<DriverDashboard>
           setState(() => _navIndex = index);
           switch (index) {
             case 0:
-              await _loadDriverRides();
+              // Rides button - show rides dialog
+              _showRidesDialog();
               break;
             case 1:
-              _showFeatureDialog('Earnings');
+              // Dashboard button - do nothing, just update the selected index
+              // The dashboard content is already displayed in the main area
               break;
             case 2:
-              _showImageUploadDialog();
+              _showFeatureDialog('Earnings');
               break;
             case 3:
+              _showImageUploadDialog();
+              break;
+            case 4:
               _showFeatureDialog('Profile');
               break;
           }
@@ -248,11 +261,16 @@ class _DriverDashboardState extends State<DriverDashboard>
           fontWeight: FontWeight.w600,
         ),
         unselectedLabelTextStyle: const TextStyle(color: Colors.white70),
-        destinations: const [
+        destinations: [
           NavigationRailDestination(
-            icon: Icon(Icons.list_alt),
-            selectedIcon: Icon(Icons.list_alt),
+            icon: Icon(Icons.local_taxi_outlined),
+            selectedIcon: Icon(Icons.local_taxi),
             label: Text('Rides'),
+          ),
+          NavigationRailDestination(
+            icon: Icon(Icons.dashboard_outlined),
+            selectedIcon: Icon(Icons.dashboard),
+            label: Text('Dashboard'),
           ),
           NavigationRailDestination(
             icon: Icon(Icons.account_balance_wallet_outlined),
@@ -278,51 +296,6 @@ class _DriverDashboardState extends State<DriverDashboard>
   void dispose() {
     _fadeController.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadDriverData() async {
-    await _loadDriverRides(initialLoad: true);
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        final usersRef = FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid);
-        final driversRef = FirebaseFirestore.instance
-            .collection('drivers')
-            .doc(user.uid);
-
-        // Fetch user and driver docs in parallel
-        final snapshots = await Future.wait([usersRef.get(), driversRef.get()]);
-        final userDoc = snapshots[0];
-        final driverDoc = snapshots[1];
-
-        // Merge data (driver doc takes precedence for driver-specific fields)
-        final merged = <String, dynamic>{};
-        if (userDoc.exists) merged.addAll(userDoc.data()!);
-        if (driverDoc.exists) merged.addAll(driverDoc.data()!);
-
-        setState(() {
-          _driverData = merged.isNotEmpty ? merged : null;
-          _isOnline =
-              (merged['isOnline'] ?? userDoc.data()?['isOnline'] ?? false)
-                  as bool;
-          _isLoading = false;
-        });
-
-        // Check if driver needs to upload images using merged data
-        _checkAndShowImageUploadDialog(merged);
-      } else {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      print('Error loading driver data: $e');
-      setState(() {
-        _isLoading = false;
-      });
-    }
   }
 
   Future<void> _toggleOnlineStatus() async {
@@ -669,16 +642,6 @@ class _DriverDashboardState extends State<DriverDashboard>
                                 ),
                               ],
                               const SizedBox(height: 24),
-                              const Text(
-                                'Your Recent Rides',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              _buildRidesSection(),
                             ],
                           ),
                         ),
@@ -697,168 +660,349 @@ class _DriverDashboardState extends State<DriverDashboard>
   }
 
   Widget _buildRidesSection() {
-    if (_isRidesLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: Colors.amber),
-      );
-    }
-
-    if (_ridesError != null) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.red.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-        ),
-        child: Text(
-          _ridesError!,
-          style: const TextStyle(color: Colors.redAccent),
-        ),
-      );
-    }
-
-    if (_rides.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-        ),
-        child: const Text(
-          'No rides to display right now. Keep an eye out for new bookings!',
-          style: TextStyle(color: Colors.white70),
-        ),
-      );
-    }
-
-    return Column(
-      children: _rides.map((ride) {
-        final status = ride['status'] as String? ?? 'unknown';
-        final pickup = ride['pickupAddress'] as String? ?? 'Unknown pickup';
-        final destination =
-            ride['destinationAddress'] as String? ?? 'Unknown destination';
-        final createdAt = ride['createdAt'];
-        String createdText = 'Just now';
-        if (createdAt is Timestamp) {
-          final date = createdAt.toDate();
-          createdText =
-              '${date.day}/${date.month}/${date.year} '
-              '${date.hour.toString().padLeft(2, '0')}:'
-              '${date.minute.toString().padLeft(2, '0')}';
-        }
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.25),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-            ],
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      child: const Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.list_alt, color: Colors.white70, size: 48),
+          SizedBox(height: 16),
+          Text(
+            'View your ride requests',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.deepPurple.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      status.toUpperCase(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.6,
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    createdText,
-                    style: const TextStyle(color: Colors.white54, fontSize: 12),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.my_location, color: Colors.amber, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      pickup,
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(
-                    Icons.location_on,
-                    color: Colors.greenAccent,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      destination,
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            MapScreen(rideId: ride['id'] as String),
-                      ),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.deepPurple,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  icon: const Icon(Icons.map_outlined),
-                  label: const Text('View Route'),
-                ),
-              ),
-            ],
+          SizedBox(height: 8),
+          Text(
+            'Tap the button above to see all your ride requests',
+            style: TextStyle(color: Colors.white70, fontSize: 14),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Helper method to build info chips
+  Widget _buildInfoChip(IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white70, size: 16),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Helper method to get status color
+  Color _getStatusColor(String status) {
+    return Colors.grey;
+  }
+
+  Widget _buildRidesList(List<Map<String, dynamic>> rides) {
+    return const SizedBox.shrink();
+  }
+
+  Future<void> _showRidesDialog({List<Map<String, dynamic>>? rides}) async {
+    if (!mounted) {
+      return;
+    }
+
+    // Ensure we have rides to display. If none provided, fetch them first.
+    final resolvedRides = rides ?? await _loadRidesForDialog();
+    if (resolvedRides == null) {
+      return;
+    }
+
+    _showRidesDialogFromList(resolvedRides);
+  }
+
+  Future<List<Map<String, dynamic>>?> _loadRidesForDialog() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to load rides. Please sign in again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return null;
+    }
+
+    try {
+      // Query ONLY by driverId to avoid composite index requirements
+      // Following the optimization pattern from FirestoreService.getRidesForDriver
+      final ridesQuery = FirebaseFirestore.instance
+          .collection('rides')
+          .where('driverId', isEqualTo: user.uid)
+          .get(); // Removed orderBy to avoid any potential index issues
+
+      final snapshot = await ridesQuery;
+      final docs = snapshot.docs;
+
+      if (docs.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No rides found for your account yet.'),
+            ),
+          );
+        }
+        return [];
+      }
+
+      // Map docs to list and sort in memory to avoid index requirements
+      final rides = docs
+          .map((doc) => {'id': doc.id, ...doc.data()})
+          .toList()
+        ..sort((a, b) {
+          // Sort by createdAt descending in memory
+          final aTimestamp = a['createdAt'];
+          final bTimestamp = b['createdAt'];
+          if (aTimestamp is Timestamp && bTimestamp is Timestamp) {
+            return bTimestamp.compareTo(aTimestamp);
+          }
+          return 0;
+        });
+
+      return rides;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load rides: $e'),
+            backgroundColor: Colors.red,
           ),
         );
-      }).toList(),
+      }
+      return null;
+    }
+  }
+
+  void _showRideDetailsDialog(Map<String, dynamic> ride) {
+    final status = ride['status'] as String? ?? 'unknown';
+    final pickup = ride['pickupAddress'] as String? ?? 'Unknown pickup';
+    final destination =
+        ride['destinationAddress'] as String? ?? 'Unknown destination';
+    final fareEstimate = ride['fare'] as num? ?? 0;
+
+    // Rider details
+    final riderData = ride['rider'] as Map<String, dynamic>?;
+    final riderName = riderData?['name'] as String? ?? 'Unknown Rider';
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1A1A2E),
+          title: const Text(
+            'Ride Details',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Status
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _getStatusColor(status),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    status.toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Rider Information
+                const Text(
+                  'Rider:',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  riderName,
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
+                const SizedBox(height: 16),
+
+                // Fare
+                const Text(
+                  'Fare:',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '₹${fareEstimate.toStringAsFixed(0)}',
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
+                const SizedBox(height: 16),
+
+                // Pickup Location
+                const Text(
+                  'Pickup Location:',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.my_location,
+                      color: Colors.amber,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        pickup,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Destination
+                const Text(
+                  'Destination:',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.location_on,
+                      color: Colors.greenAccent,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        destination,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text(
+                'Close',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
+            if (status == 'requested') ...[
+              ElevatedButton(
+                onPressed: () async {
+                  // Accept ride
+                  Navigator.of(context).pop();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Accept'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  // Reject ride
+                  Navigator.of(context).pop();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Reject'),
+              ),
+            ] else if (status == 'accepted') ...[
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  // TODO: Implement ride completion logic
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Ride completion feature coming soon'),
+                      backgroundColor: Colors.blue,
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Complete Ride'),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  // Helper method to build detail items
+  Widget _buildDetailItem(IconData icon, String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: Colors.white70, size: 16),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1004,7 +1148,300 @@ class _DriverDashboardState extends State<DriverDashboard>
     });
   }
 
+  // Add this method for debugging Firestore issues
+  Future<void> _runFirestoreDebug() async {
+    try {
+      print('🚀 Starting Firestore debug...');
+      await FirestoreService.debugFirestoreAccess();
+      print('✅ Firestore debug completed');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Firestore debug completed - check console for details',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Firestore debug failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Firestore debug failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // Add this method for debugging all rides
+  Future<void> _runAllRidesDebug() async {
+    try {
+      print('🚀 Starting all rides debug...');
+      final allRides = await FirestoreService.getAllRides();
+      print('✅ All rides debug completed. Found ${allRides.length} rides.');
+
+      if (mounted) {
+        // Show a dialog with the results
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: const Color(0xFF1A1A2E),
+            title: const Text(
+              'All Rides Debug',
+              style: TextStyle(color: Colors.white),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Found ${allRides.length} rides in total',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  const SizedBox(height: 16),
+                  ...allRides
+                      .map(
+                        (ride) => Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'ID: ${ride['id']}',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Text(
+                              'Status: ${ride['status']}',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Text(
+                              'Driver ID: ${ride['driverId']}',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Text(
+                              'Rider: ${ride['rider']?['name'] ?? 'N/A'}',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const Divider(color: Colors.white24),
+                          ],
+                        ),
+                      )
+                      .toList(),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK', style: TextStyle(color: Colors.amber)),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ All rides debug failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('All rides debug failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // Add this method for debugging user info
+  Future<void> _showUserInfo() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print('❌ No current user found');
+      return;
+    }
+
+    print('Current user ID: ${user.uid}');
+    print('Current user email: ${user.email}');
+
+    // Get driver document
+    try {
+      final driverDoc = await FirebaseFirestore.instance
+          .collection('drivers')
+          .doc(user.uid)
+          .get();
+
+      if (driverDoc.exists) {
+        final driverData = driverDoc.data();
+        print('Driver document found:');
+        print('  Name: ${driverData?['name']}');
+        print('  Email: ${driverData?['email']}');
+        print('  Is Approved: ${driverData?['isApproved']}');
+      } else {
+        print('❌ No driver document found for user ID: ${user.uid}');
+      }
+    } catch (e) {
+      print('❌ Error fetching driver document: $e');
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('User ID: ${user.uid} - Check console for details'),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    }
+  }
+
+  // Add this method for debugging rides for current driver
+  Future<void> _debugRidesForCurrentDriver() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print('❌ No current user found');
+      return;
+    }
+
+    print('🔍 Debugging rides for current driver: ${user.uid}');
+
+    try {
+      await FirestoreService.debugRidesForDriver(user.uid);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Driver rides debug completed - check console for details',
+            ),
+            backgroundColor: Colors.blue,
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Driver rides debug failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Driver rides debug failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // Add this method to test dialog with sample data
+  void _testRidesDialog() {
+    print('Testing rides dialog with sample data');
+
+    final sampleRides = [
+      {
+        'id': 'test_ride_1',
+        'status': 'requested',
+        'pickupAddress': 'Test Pickup Location',
+        'destinationAddress': 'Test Destination',
+        'fare': 250,
+        'rider': {'name': 'Test Rider'},
+      },
+      {
+        'id': 'test_ride_2',
+        'status': 'accepted',
+        'pickupAddress': 'Another Pickup',
+        'destinationAddress': 'Another Destination',
+        'fare': 350,
+        'rider': {'name': 'Another Rider'},
+      },
+    ];
+
+    print('Sample rides: $sampleRides');
+    _showRidesDialog(rides: sampleRides);
+  }
+
+  // Add this method to test if dialogs can be shown at all
+  void _testSimpleDialog() {
+    print('Testing simple dialog');
+
+    if (!mounted) {
+      print('❌ Widget not mounted');
+      return;
+    }
+
+    print('Showing simple dialog');
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        print('Building simple dialog');
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1A1A2E),
+          title: const Text(
+            'Test Dialog',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: const Text(
+            'This is a test dialog',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK', style: TextStyle(color: Colors.amber)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _showFeatureDialog(String feature) {
+    if (feature == 'Debug') {
+      _runFirestoreDebug();
+      return;
+    }
+
+    if (feature == 'All Rides') {
+      _runAllRidesDebug();
+      return;
+    }
+
+    if (feature == 'User Info') {
+      _showUserInfo();
+      return;
+    }
+
+    if (feature == 'My Rides Debug') {
+      _debugRidesForCurrentDriver();
+      return;
+    }
+
+    if (feature == 'Test Dialog') {
+      _testRidesDialog();
+      return;
+    }
+
+    if (feature == 'Test Simple Dialog') {
+      _testSimpleDialog();
+      return;
+    }
+
+    if (feature == 'Profile') {
+      _showDriverProfileDialog();
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1021,6 +1458,580 @@ class _DriverDashboardState extends State<DriverDashboard>
           ),
         ],
       ),
+    );
+  }
+
+  void _showDriverProfileDialog() {
+    if (_driverData == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Driver data not available'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1A1A2E),
+          title: const Text(
+            'Driver Profile',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Profile header with avatar
+                Center(
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.amber, width: 2),
+                        ),
+                        child: CircleAvatar(
+                          backgroundImage:
+                              _driverData!['profileImageUrl'] != null
+                              ? NetworkImage(_driverData!['profileImageUrl'])
+                              : null,
+                          backgroundColor: Colors.white.withValues(alpha: 0.1),
+                          child: _driverData!['profileImageUrl'] == null
+                              ? const Icon(
+                                  Icons.person,
+                                  color: Colors.white70,
+                                  size: 40,
+                                )
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _driverData!['name'] ?? 'Unknown Driver',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _driverData!['email'] ?? 'No email provided',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Driver details section
+                const Text(
+                  'Driver Information',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                _buildProfileInfoRow(
+                  'License ID',
+                  _driverData!['licenseId'] ?? 'N/A',
+                  Icons.credit_card,
+                ),
+                const SizedBox(height: 12),
+
+                _buildProfileInfoRow(
+                  'Car Model',
+                  _driverData!['carModel'] ?? 'N/A',
+                  Icons.directions_car,
+                ),
+                const SizedBox(height: 12),
+
+                _buildProfileInfoRow(
+                  'Phone Number',
+                  _driverData!['phoneNumber'] ?? 'N/A',
+                  Icons.phone,
+                ),
+                const SizedBox(height: 12),
+
+                _buildProfileInfoRow(
+                  'Total Rides',
+                  '${_driverData!['totalRides'] ?? 0}',
+                  Icons.local_taxi,
+                ),
+                const SizedBox(height: 12),
+
+                _buildProfileInfoRow(
+                  'Rating',
+                  '${_driverData!['rating']?.toStringAsFixed(1) ?? '0.0'}',
+                  Icons.star,
+                ),
+                const SizedBox(height: 12),
+
+                _buildProfileInfoRow(
+                  'Total Earnings',
+                  '₹${_driverData!['totalEarnings']?.toStringAsFixed(0) ?? '0'}',
+                  Icons.account_balance_wallet,
+                ),
+                const SizedBox(height: 12),
+
+                _buildProfileInfoRow(
+                  'Approval Status',
+                  _driverData!['isApproved'] == true ? 'Approved' : 'Pending',
+                  _driverData!['isApproved'] == true
+                      ? Icons.verified
+                      : Icons.pending,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close', style: TextStyle(color: Colors.amber)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildProfileInfoRow(String label, String value, IconData icon) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: Colors.amber, size: 20),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showRidesDialogFromList(List<Map<String, dynamic>> rides) {
+    print('Showing rides dialog with ${rides.length} rides');
+    print('Dialog context: $context');
+    print('Dialog mounted: $mounted');
+
+    // Print details of each ride for debugging
+    if (rides.isNotEmpty) {
+      print('📋 Rides to display in dialog:');
+      for (var i = 0; i < rides.length; i++) {
+        final ride = rides[i];
+        print(
+          '  Ride $i: ID=${ride['id']}, Status=${ride['status']}, DriverId=${ride['driverId']}',
+        );
+      }
+    }
+
+    if (!mounted) {
+      print('❌ Widget not mounted, cannot show dialog');
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        print('Building dialog with ${rides.length} rides');
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1A1A2E),
+          title: const Text(
+            'Your Rides',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: rides.isEmpty
+                ? const Center(
+                    child: Text(
+                      'No rides found for your account yet.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  )
+                : SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: rides.map((ride) {
+                        print('Building ride card for: ${ride['id']}');
+                        final status = ride['status'] as String? ?? 'unknown';
+                        final pickup =
+                            ride['pickupAddress'] as String? ??
+                            'Unknown pickup';
+                        final destination =
+                            ride['destinationAddress'] as String? ??
+                            'Unknown destination';
+                        final fareEstimate = ride['fare'] as num? ?? 0;
+
+                        // Rider details
+                        final riderData =
+                            ride['rider'] as Map<String, dynamic>?;
+                        final riderName =
+                            riderData?['name'] as String? ?? 'Unknown Rider';
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.15),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Header with status
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.1),
+                                  borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(12),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: _getStatusColor(status),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        status.toUpperCase(),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 10,
+                                        ),
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                  ],
+                                ),
+                              ),
+
+                              // Ride details content
+                              Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Rider information
+                                    const Text(
+                                      'Rider:',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      riderName,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+
+                                    // Fare
+                                    const Text(
+                                      'Fare:',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '₹${fareEstimate.toStringAsFixed(0)}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+
+                                    // Route information
+                                    const Text(
+                                      'Pickup:',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.location_on,
+                                          color: Colors.amber,
+                                          size: 16,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            pickup,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    const Padding(
+                                      padding: EdgeInsets.only(left: 12),
+                                      child: Icon(
+                                        Icons.arrow_downward,
+                                        color: Colors.white38,
+                                        size: 12,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      'Destination:',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.location_on,
+                                          color: Colors.green,
+                                          size: 16,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            destination,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+
+                                    // Action buttons based on status
+                                    if (status == 'requested') ...[
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceEvenly,
+                                        children: [
+                                          ElevatedButton(
+                                            onPressed: () async {
+                                              // Accept ride - update status to 'accepted'
+                                              try {
+                                                await FirestoreService.updateRideStatus(
+                                                  ride['id'],
+                                                  'accepted',
+                                                );
+                                                if (mounted) {
+                                                  Navigator.of(context).pop();
+                                                  // Show success message
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text('Ride accepted successfully!'),
+                                                      backgroundColor: Colors.green,
+                                                    ),
+                                                  );
+                                                  // Refresh the rides dialog to show updated status
+                                                  _showRidesDialog();
+                                                }
+                                              } catch (e) {
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text('Error accepting ride: $e'),
+                                                      backgroundColor: Colors.red,
+                                                    ),
+                                                  );
+                                                }
+                                              }
+                                            },
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.green,
+                                              foregroundColor: Colors.white,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 16,
+                                                    vertical: 8,
+                                                  ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                            ),
+                                            child: const Text(
+                                              'Accept',
+                                              style: TextStyle(fontSize: 12),
+                                            ),
+                                          ),
+                                          ElevatedButton(
+                                            onPressed: () async {
+                                              // Reject ride - update status to 'rejected'
+                                              try {
+                                                await FirestoreService.updateRideStatus(
+                                                  ride['id'],
+                                                  'rejected',
+                                                );
+                                                if (mounted) {
+                                                  Navigator.of(context).pop();
+                                                  // Show success message
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text('Ride rejected successfully!'),
+                                                      backgroundColor: Colors.orange,
+                                                    ),
+                                                  );
+                                                  // Refresh the rides dialog to show updated status
+                                                  _showRidesDialog();
+                                                }
+                                              } catch (e) {
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text('Error rejecting ride: $e'),
+                                                      backgroundColor: Colors.red,
+                                                    ),
+                                                  );
+                                                }
+                                              }
+                                            },
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.red,
+                                              foregroundColor: Colors.white,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 16,
+                                                    vertical: 8,
+                                                  ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                            ),
+                                            child: const Text(
+                                              'Reject',
+                                              style: TextStyle(fontSize: 12),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ] else if (status == 'accepted') ...[
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          ElevatedButton(
+                                            onPressed: () async {
+                                              Navigator.of(context).pop();
+                                              // TODO: Implement ride completion logic
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'Ride completion feature coming soon',
+                                                  ),
+                                                  backgroundColor: Colors.blue,
+                                                ),
+                                              );
+                                            },
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.blue,
+                                              foregroundColor: Colors.white,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 16,
+                                                    vertical: 8,
+                                                  ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                            ),
+                                            child: const Text(
+                                              'Complete Ride',
+                                              style: TextStyle(fontSize: 12),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text(
+                'Close',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

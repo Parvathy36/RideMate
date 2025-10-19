@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'services/firestore_service.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 class RidesBookingPage extends StatefulWidget {
   final String rideId;
@@ -27,11 +28,61 @@ class _RidesBookingPageState extends State<RidesBookingPage> {
   String _selectedPaymentMethod = 'Cash';
   bool _isLoading = false;
   Map<String, dynamic>? _rideData;
+  late Razorpay _razorpay;
 
   @override
   void initState() {
     super.initState();
     _loadRideData();
+    
+    // Initialize Razorpay
+    _razorpay = Razorpay();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
+    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+  }
+
+  @override
+  void dispose() {
+    _razorpay.clear(); // Clear Razorpay listeners
+    super.dispose();
+  }
+
+  // Handle payment success
+  void _handlePaymentSuccess(PaymentSuccessResponse response) {
+    print('Payment successful: ${response.paymentId}');
+    
+    // After successful payment, confirm the booking
+    _confirmBookingAfterPayment();
+  }
+
+  // Handle payment error
+  void _handlePaymentError(PaymentFailureResponse response) {
+    print('Payment error: ${response.message}');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Payment failed: ${response.message}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Handle external wallet
+  void _handleExternalWallet(ExternalWalletResponse response) {
+    print('External wallet: ${response.walletName}');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Selected wallet: ${response.walletName}'),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    }
   }
 
   Future<void> _loadRideData() async {
@@ -47,7 +98,58 @@ class _RidesBookingPageState extends State<RidesBookingPage> {
     }
   }
 
-  Future<void> _confirmBooking() async {
+  // Open Razorpay checkout
+  void _openCheckout() {
+    var options = {
+      'key': 'rzp_test_RVQP1hirXQFCVn', // Provided test key
+      'amount': (widget.fare * 100).toInt(), // Amount in paise
+      'name': 'RideMate',
+      'description': 'Ride Payment',
+      'prefill': {
+        'contact': '',
+        'email': '',
+      },
+      'external': {
+        'wallets': ['paytm']
+      }
+    };
+
+    try {
+      _razorpay.open(options);
+    } catch (e) {
+      print('Error opening Razorpay: $e');
+      // Handle the MissingPluginException by showing an error message and falling back to cash payment
+      if (e.toString().contains('MissingPluginException')) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Payment gateway not available. Please use Cash payment method.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          // Automatically select cash payment method
+          setState(() {
+            _selectedPaymentMethod = 'Cash';
+            _isLoading = false;
+          });
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Error opening payment gateway'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      }
+    }
+  }
+
+  Future<void> _confirmBookingAfterPayment() async {
     setState(() {
       _isLoading = true;
     });
@@ -82,6 +184,53 @@ class _RidesBookingPageState extends State<RidesBookingPage> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _confirmBooking() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    // If Cash payment method is selected, confirm booking directly
+    if (_selectedPaymentMethod == 'Cash') {
+      try {
+        // Update ride status to confirmed
+        await FirestoreService.updateRideStatus(widget.rideId, 'confirmed');
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Booking confirmed successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+
+          // Navigate back to home or to a tracking page
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error confirming booking: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      }
+    } else {
+      // For other payment methods, open Razorpay
+      setState(() {
+        _isLoading = false; // Reset loading state for Razorpay
+      });
+      _openCheckout();
     }
   }
 
@@ -128,10 +277,6 @@ class _RidesBookingPageState extends State<RidesBookingPage> {
 
                       // Trip Details Card
                       _buildTripDetailsCard(),
-                      const SizedBox(height: 16),
-
-                      // Fare Breakdown Card
-                      _buildFareBreakdownCard(),
                       const SizedBox(height: 16),
 
                       // Payment Method Card
@@ -295,66 +440,6 @@ class _RidesBookingPageState extends State<RidesBookingPage> {
                 ],
               ),
             ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFareBreakdownCard() {
-    final baseFare = widget.driverDetails['baseFare'] ?? 0.0;
-    final perKmRate = widget.driverDetails['perKmRate'] ?? 0.0;
-    final distance = widget.driverDetails['distance'] ?? 0.0;
-
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Fare Breakdown',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1A1A2E),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildFareRow('Base Fare', '₹${baseFare.toStringAsFixed(0)}'),
-            const SizedBox(height: 8),
-            _buildFareRow(
-              'Distance Charge (${distance.toStringAsFixed(1)} km × ₹${perKmRate.toStringAsFixed(0)})',
-              '₹${(distance * perKmRate).toStringAsFixed(0)}',
-            ),
-            const SizedBox(height: 8),
-            _buildFareRow('Ride Type', widget.rideType),
-            const SizedBox(height: 12),
-            const Divider(thickness: 2),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Total Fare',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1A1A2E),
-                  ),
-                ),
-                Text(
-                  '₹${widget.fare.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.deepPurple,
-                  ),
-                ),
-              ],
-            ),
           ],
         ),
       ),
