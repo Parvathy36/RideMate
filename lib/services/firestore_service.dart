@@ -587,6 +587,56 @@ class FirestoreService {
     }
   }
 
+  // Create shared ride request in shared_rides collection
+  static Future<void> createSharedRideRequest({
+    required String rideId,
+    required String targetRideId,
+    required int numberOfMembers,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('User not signed in');
+      }
+
+      // Get current ride details
+      final currentRide = await getRideById(rideId);
+      final targetRide = await getRideById(targetRideId);
+      
+      if (currentRide == null || targetRide == null) {
+        throw Exception('Ride not found');
+      }
+
+      final sharedRideRef = _firestore.collection('shared_rides').doc();
+      final sharedRideData = <String, dynamic>{
+        'sharedRideId': sharedRideRef.id,
+        'requesterRideId': rideId,
+        'requesterUserId': user.uid,
+        'requesterDetails': {
+          'name': currentRide['rider']?['name'] ?? user.displayName ?? 'User',
+          'email': user.email,
+        },
+        'targetRideId': targetRideId,
+        'targetUserId': targetRide['riderId'],
+        'targetUserDetails': {
+          'name': targetRide['rider']?['name'] ?? 'Unknown User',
+          'email': targetRide['rider']?['email'],
+        },
+        'numberOfMembers': numberOfMembers,
+        'pickupAddress': currentRide['pickupAddress'],
+        'destinationAddress': currentRide['destinationAddress'],
+        'status': 'pending', // pending -> accepted -> rejected
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      await sharedRideRef.set(sharedRideData);
+    } catch (e) {
+      print('❌ Error creating shared ride request: $e');
+      throw Exception('Failed to create shared ride request: $e');
+    }
+  }
+
   // Update ride with assigned driver details
   static Future<void> updateRideWithDriver({
     required String rideId,

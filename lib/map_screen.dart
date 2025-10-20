@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'services/firestore_service.dart';
 import 'config/app_config.dart';
 import 'rides_booking.dart';
+import 'ride_pooling.dart';
 
 class _OsrmRoute {
   _OsrmRoute({
@@ -35,6 +36,7 @@ class _MapScreenState extends State<MapScreen> {
   String? _error;
 
   Map<String, dynamic>? _ride;
+  String? _rideType; // Add this line to store the ride type
   LatLng? _pickup;
   LatLng? _destination;
   List<LatLng> _route = <LatLng>[];
@@ -56,6 +58,9 @@ class _MapScreenState extends State<MapScreen> {
       if (_ride == null) {
         throw Exception('Ride not found');
       }
+
+      // Get ride type from the ride document
+      _rideType = _ride!['rideType'] as String? ?? 'Solo';
 
       // Resolve coordinates (prefer stored GeoPoints if present)
       final pickupAddress = (_ride!['pickupAddress'] as String?)?.trim();
@@ -904,8 +909,22 @@ class _MapScreenState extends State<MapScreen> {
                     driverImageUrl: driver.imageUrl,
                   );
 
-                  if (mounted) {
-                    Navigator.of(context).pop();
+                  // Check rideType and navigate accordingly
+                  if (_rideType == 'Pooling') {
+                    // Navigate to ride_pooling page
+                    if (mounted) {
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              RidePoolingPage(rideId: widget.rideId),
+                        ),
+                      );
+                    }
+                  } else {
+                    // Keep existing functionality for Solo rides
+                    if (mounted) {
+                      Navigator.of(context).pop();
+                    }
                   }
                 } catch (e) {
                   // Show error message
