@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -57,15 +58,41 @@ class _MapScreenState extends State<MapScreen> {
       }
 
       // Resolve coordinates (prefer stored GeoPoints if present)
+      final pickupAddress = (_ride!['pickupAddress'] as String?)?.trim();
+      final destinationAddress = (_ride!['destinationAddress'] as String?)
+          ?.trim();
+
       _pickup =
           _extractLatLng(_ride!['pickupLocation']) ??
-          await _geocodeAddress(_ride!['pickupAddress']);
+          (pickupAddress?.isNotEmpty == true
+              ? await _geocodeAddress(pickupAddress!)
+              : null) ??
+          _fallbackLatLng(AppConfig.defaultPickupLocation);
+
       _destination =
           _extractLatLng(_ride!['destinationLocation']) ??
-          await _geocodeAddress(_ride!['destinationAddress']);
+          (destinationAddress?.isNotEmpty == true
+              ? await _geocodeAddress(destinationAddress!)
+              : null) ??
+          _fallbackLatLng(AppConfig.defaultDestinationLocation);
+
+      // Persist fallback locations if original document lacked coordinates
+      await FirestoreService.updateRideLocations(
+        rideId: widget.rideId,
+        pickup: {
+          'latitude': _pickup!.latitude,
+          'longitude': _pickup!.longitude,
+        },
+        destination: {
+          'latitude': _destination!.latitude,
+          'longitude': _destination!.longitude,
+        },
+      );
 
       if (_pickup == null || _destination == null) {
-        throw Exception('Could not resolve pickup/destination locations');
+        throw Exception(
+          'Could not resolve pickup/destination locations. Update the ride data or AppConfig fallbacks.',
+        );
       }
 
       // Fetch route via OSRM (fastest alternative) and persist normalized points
@@ -114,9 +141,13 @@ class _MapScreenState extends State<MapScreen> {
   LatLng? _extractLatLng(dynamic value) {
     try {
       if (value == null) return null;
+      if (value is LatLng) return value;
+      if (value is GeoPoint) {
+        return LatLng(value.latitude, value.longitude);
+      }
       if (value is Map<String, dynamic>) {
-        final lat = value['latitude'] as num?;
-        final lng = value['longitude'] as num?;
+        final lat = (value['latitude'] ?? value['lat']) as num?;
+        final lng = (value['longitude'] ?? value['lng']) as num?;
         if (lat != null && lng != null) {
           return LatLng(lat.toDouble(), lng.toDouble());
         }
@@ -125,6 +156,24 @@ class _MapScreenState extends State<MapScreen> {
     } catch (_) {
       return null;
     }
+  }
+
+  LatLng? _fallbackLatLng(dynamic fallback) {
+    if (fallback == null) {
+      return null;
+    }
+    final resolved = _extractLatLng(fallback);
+    if (resolved != null) {
+      return resolved;
+    }
+    if (fallback is Map<String, double>) {
+      final lat = fallback['latitude'];
+      final lng = fallback['longitude'];
+      if (lat != null && lng != null) {
+        return LatLng(lat, lng);
+      }
+    }
+    return null;
   }
 
   Future<LatLng?> _geocodeAddress(String address) async {
@@ -136,12 +185,14 @@ class _MapScreenState extends State<MapScreen> {
         '&format=json'
         '&limit=1',
       );
-      final resp = await http.get(
-        url,
-        headers: {
-          'User-Agent': 'RideMate/1.0', // Required by Nominatim
-        },
-      );
+      final resp = await http
+          .get(
+            url,
+            headers: {
+              'User-Agent': 'RideMate/1.0', // Required by Nominatim
+            },
+          )
+          .timeout(AppConfig.geocodingTimeout);
       if (resp.statusCode != 200) return null;
       final data = json.decode(resp.body) as List;
       if (data.isEmpty) return null;
