@@ -40,7 +40,7 @@ class _RidePoolingPageState extends State<RidePoolingPage> {
           _ride = ride;
           _loading = false;
         });
-        
+
         // Load matching rides after main ride data is loaded
         if (ride != null) {
           _loadMatchingRides();
@@ -65,23 +65,28 @@ class _RidePoolingPageState extends State<RidePoolingPage> {
     try {
       // Get all rides with similar destination
       final allRides = await FirestoreService.getAllRides();
-      
+
       if (_ride != null && mounted) {
-        final currentDestination = _ride!['destinationAddress'] as String? ?? '';
-        
+        final currentDestination =
+            _ride!['destinationAddress'] as String? ?? '';
+
         // Filter rides with matching destinations (excluding current ride)
         final matchingRides = allRides.where((ride) {
           // Skip the current ride
           if (ride['id'] == widget.rideId) return false;
-          
+
           // Check if status is appropriate for pooling
           final status = ride['status'] as String? ?? '';
           if (status != 'requested' && status != 'matched') return false;
-          
+
           // Check if destination matches (simple string matching for now)
           final rideDestination = ride['destinationAddress'] as String? ?? '';
-          return rideDestination.toLowerCase().contains(currentDestination.toLowerCase()) ||
-                 currentDestination.toLowerCase().contains(rideDestination.toLowerCase());
+          return rideDestination.toLowerCase().contains(
+                currentDestination.toLowerCase(),
+              ) ||
+              currentDestination.toLowerCase().contains(
+                rideDestination.toLowerCase(),
+              );
         }).toList();
 
         if (mounted) {
@@ -258,37 +263,37 @@ class _RidePoolingPageState extends State<RidePoolingPage> {
           _loadingMatches
               ? const Center(child: CircularProgressIndicator())
               : _requestError != null
-                  ? Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          children: [
-                            const Icon(Icons.error, color: Colors.red),
-                            const SizedBox(height: 8),
-                            Text(_requestError!),
-                            const SizedBox(height: 8),
-                            ElevatedButton(
-                              onPressed: _loadMatchingRides,
-                              child: const Text('Retry'),
-                            ),
-                          ],
+              ? Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.error, color: Colors.red),
+                        const SizedBox(height: 8),
+                        Text(_requestError!),
+                        const SizedBox(height: 8),
+                        ElevatedButton(
+                          onPressed: _loadMatchingRides,
+                          child: const Text('Retry'),
                         ),
+                      ],
+                    ),
+                  ),
+                )
+              : _matchingRides.isEmpty
+              ? const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Text(
+                      'No matching rides found. Try again later.',
+                      style: TextStyle(
+                        fontStyle: FontStyle.italic,
+                        color: Colors.grey,
                       ),
-                    )
-                  : _matchingRides.isEmpty
-                      ? const Card(
-                          child: Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: Text(
-                              'No matching rides found. Try again later.',
-                              style: TextStyle(
-                                fontStyle: FontStyle.italic,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ),
-                        )
-                      : _buildMatchingRidesList(),
+                    ),
+                  ),
+                )
+              : _buildMatchingRidesList(),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
@@ -319,7 +324,8 @@ class _RidePoolingPageState extends State<RidePoolingPage> {
       children: _matchingRides.map((ride) {
         final riderName = ride['rider']?['name'] ?? 'Unknown rider';
         final pickup = ride['pickupAddress'] as String? ?? 'Unknown pickup';
-        final destination = ride['destinationAddress'] as String? ?? 'Unknown destination';
+        final destination =
+            ride['destinationAddress'] as String? ?? 'Unknown destination';
         final status = ride['status'] as String? ?? 'unknown';
         final fare = ride['fare']?.toString() ?? 'N/A';
 

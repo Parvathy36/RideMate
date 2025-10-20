@@ -15,6 +15,10 @@ class _RideHistoryPageState extends State<RideHistoryPage>
   final AuthService _authService = AuthService();
   bool _isLoading = true;
   List<Map<String, dynamic>> _rides = [];
+  List<Map<String, dynamic>> _pendingSharedRides =
+      []; // New field for pending shared rides
+  List<Map<String, dynamic>> _acceptedSharedRides =
+      []; // New field for accepted shared rides
   String? _error;
   late AnimationController _fadeController;
   late AnimationController _slideController;
@@ -24,7 +28,7 @@ class _RideHistoryPageState extends State<RideHistoryPage>
   @override
   void initState() {
     super.initState();
-    
+
     // Initialize animations
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 1500),
@@ -39,17 +43,15 @@ class _RideHistoryPageState extends State<RideHistoryPage>
       CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
     );
 
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.3),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
-    );
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
+          CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+        );
 
     // Start animations
     _fadeController.forward();
     _slideController.forward();
-    
+
     _loadRideHistory();
   }
 
@@ -68,10 +70,21 @@ class _RideHistoryPageState extends State<RideHistoryPage>
       }
 
       final rides = await FirestoreService.getRidesForUser(user.uid);
-      
+
+      // For pooling rides, check shared_rides collection
+      final updatedRides = await _checkPoolingRides(rides);
+
+      // Get pending shared rides where targetRideId matches user's rides
+      final pendingSharedRides = await _getPendingSharedRides(user.uid);
+
+      // Get accepted shared rides where targetRideId matches user's rides
+      final acceptedSharedRides = await _getAcceptedSharedRides(user.uid);
+
       if (mounted) {
         setState(() {
-          _rides = rides;
+          _rides = updatedRides;
+          _pendingSharedRides = pendingSharedRides;
+          _acceptedSharedRides = acceptedSharedRides;
           _isLoading = false;
         });
       }
@@ -84,6 +97,261 @@ class _RideHistoryPageState extends State<RideHistoryPage>
         });
       }
     }
+  }
+
+  // Check shared_rides collection for pooling rides
+  Future<List<Map<String, dynamic>>> _checkPoolingRides(
+    List<Map<String, dynamic>> rides,
+  ) async {
+    final updatedRides = <Map<String, dynamic>>[];
+
+    for (final ride in rides) {
+      final rideType = ride['rideType'] as String? ?? 'Solo';
+
+      // If rideType is pooling, check shared_rides collection
+      if (rideType.toLowerCase() == 'pooling') {
+        try {
+          final sharedRides = await _getSharedRidesForRide(
+            ride['id'] as String,
+          );
+
+          // Add shared ride information to the ride
+          if (sharedRides.isNotEmpty) {
+            updatedRides.add({...ride, 'sharedRides': sharedRides});
+          } else {
+            updatedRides.add(ride);
+          }
+        } catch (e) {
+          print('Error checking shared rides for ride ${ride['id']}: $e');
+          // Add ride without shared information if there's an error
+          updatedRides.add(ride);
+        }
+      } else {
+        updatedRides.add(ride);
+      }
+    }
+
+    return updatedRides;
+  }
+
+  // Get shared rides for a specific ride
+  Future<List<Map<String, dynamic>>> _getSharedRidesForRide(
+    String rideId,
+  ) async {
+    try {
+      final sharedRidesSnapshot = await FirebaseFirestore.instance
+          .collection('shared_rides')
+          .where('requesterRideId', isEqualTo: rideId)
+          .get();
+
+      final sharedRides = <Map<String, dynamic>>[];
+
+      for (final doc in sharedRidesSnapshot.docs) {
+        final sharedRideData = doc.data();
+
+        // Verify that targetRideId matches a ride in rides collection
+        final targetRide = await FirestoreService.getRideById(
+          sharedRideData['targetRideId'] as String,
+        );
+
+        if (targetRide != null) {
+          sharedRides.add({
+            'id': doc.id,
+            ...sharedRideData,
+            'targetRideDetails': targetRide,
+          });
+        }
+      }
+
+      return sharedRides;
+    } catch (e) {
+      print('Error fetching shared rides for ride $rideId: $e');
+      return [];
+    }
+  }
+
+  // Get pending shared rides where targetRideId matches user's rides
+  Future<List<Map<String, dynamic>>> _getPendingSharedRides(
+    String userId,
+  ) async {
+    try {
+      final pendingSharedRides = <Map<String, dynamic>>[];
+
+      // Get all pending shared rides
+      final sharedRidesSnapshot = await FirebaseFirestore.instance
+          .collection('shared_rides')
+          .where('status', isEqualTo: 'pending')
+          .get();
+
+      for (final doc in sharedRidesSnapshot.docs) {
+        final sharedRideData = doc.data();
+
+        // Check if the targetRideId matches any of the user's rides
+        final targetRide = await FirestoreService.getRideById(
+          sharedRideData['targetRideId'] as String,
+        );
+
+        // If target ride exists and belongs to the current user, add to pending shared rides
+        if (targetRide != null && targetRide['riderId'] == userId) {
+          // Get requester ride details
+          final requesterRide = await FirestoreService.getRideById(
+            sharedRideData['requesterRideId'] as String,
+          );
+
+          pendingSharedRides.add({
+            'id': doc.id,
+            ...sharedRideData,
+            'targetRideDetails': targetRide,
+            'requesterRideDetails': requesterRide,
+          });
+        }
+      }
+
+      return pendingSharedRides;
+    } catch (e) {
+      print('Error fetching pending shared rides: $e');
+      return [];
+    }
+  }
+
+  // Get accepted shared rides where targetRideId matches user's rides
+  Future<List<Map<String, dynamic>>> _getAcceptedSharedRides(
+    String userId,
+  ) async {
+    try {
+      final acceptedSharedRides = <Map<String, dynamic>>[];
+
+      // Get all accepted shared rides
+      final sharedRidesSnapshot = await FirebaseFirestore.instance
+          .collection('shared_rides')
+          .where('status', isEqualTo: 'accepted')
+          .get();
+
+      for (final doc in sharedRidesSnapshot.docs) {
+        final sharedRideData = doc.data();
+
+        // Check if the targetRideId matches any of the user's rides
+        final targetRide = await FirestoreService.getRideById(
+          sharedRideData['targetRideId'] as String,
+        );
+
+        // If target ride exists and belongs to the current user, add to accepted shared rides
+        if (targetRide != null && targetRide['riderId'] == userId) {
+          // Get requester ride details
+          final requesterRide = await FirestoreService.getRideById(
+            sharedRideData['requesterRideId'] as String,
+          );
+
+          acceptedSharedRides.add({
+            'id': doc.id,
+            ...sharedRideData,
+            'targetRideDetails': targetRide,
+            'requesterRideDetails': requesterRide,
+          });
+        }
+      }
+
+      return acceptedSharedRides;
+    } catch (e) {
+      print('Error fetching accepted shared rides: $e');
+      return [];
+    }
+  }
+
+  // Update shared ride status
+  Future<void> _updateSharedRideStatus(
+    String sharedRideId,
+    String status, {
+    String? rejectionMessage,
+  }) async {
+    try {
+      final updateData = <String, dynamic>{
+        'status': status,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      if (rejectionMessage != null && rejectionMessage.isNotEmpty) {
+        updateData['rejectionMessage'] = rejectionMessage;
+      }
+
+      await FirebaseFirestore.instance
+          .collection('shared_rides')
+          .doc(sharedRideId)
+          .update(updateData);
+
+      // Refresh the data
+      _loadRideHistory();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              status == 'accepted'
+                  ? 'Ride sharing request accepted!'
+                  : 'Ride sharing request rejected!',
+            ),
+            backgroundColor: status == 'accepted' ? Colors.green : Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to update ride sharing request'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      print('Error updating shared ride status: $e');
+    }
+  }
+
+  // Show rejection dialog
+  Future<void> _showRejectionDialog(String sharedRideId) async {
+    final rejectionController = TextEditingController();
+
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Reject Ride Sharing Request'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Please provide a reason for rejecting this request:'),
+              const SizedBox(height: 16),
+              TextField(
+                controller: rejectionController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: 'Enter rejection reason...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _updateSharedRideStatus(
+                  sharedRideId,
+                  'rejected',
+                  rejectionMessage: rejectionController.text,
+                );
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Reject'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -239,6 +507,116 @@ class _RideHistoryPageState extends State<RideHistoryPage>
                   ),
                 ),
                 const SizedBox(height: 30),
+                // Pending shared ride requests section
+                if (_pendingSharedRides.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Colors.white, Colors.grey.shade50],
+                        ),
+                        borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.12),
+                            blurRadius: 40,
+                            spreadRadius: 0,
+                            offset: const Offset(0, 15),
+                          ),
+                          BoxShadow(
+                            color: Colors.deepPurple.withValues(alpha: 0.08),
+                            blurRadius: 20,
+                            spreadRadius: -5,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.8),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Pending Ride Sharing Requests',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF1A1A2E),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            ..._pendingSharedRides.map((sharedRide) {
+                              return _buildPendingSharedRideCard(sharedRide);
+                            }).toList(),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+                // Accepted shared ride requests section
+                if (_acceptedSharedRides.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Colors.white, Colors.grey.shade50],
+                        ),
+                        borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.12),
+                            blurRadius: 40,
+                            spreadRadius: 0,
+                            offset: const Offset(0, 15),
+                          ),
+                          BoxShadow(
+                            color: Colors.deepPurple.withValues(alpha: 0.08),
+                            blurRadius: 20,
+                            spreadRadius: -5,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.8),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Accepted Ride Sharing Requests',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF1A1A2E),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            ..._acceptedSharedRides.map((sharedRide) {
+                              return _buildAcceptedSharedRideCard(sharedRide);
+                            }).toList(),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
                 // Ride history content
                 _isLoading
                     ? const Center(
@@ -248,147 +626,376 @@ class _RideHistoryPageState extends State<RideHistoryPage>
                         ),
                       )
                     : _error != null
-                        ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.error, color: Colors.red, size: 48),
-                                const SizedBox(height: 16),
-                                Text(
-                                  _error!,
-                                  style: const TextStyle(
-                                    color: Colors.red,
-                                    fontSize: 16,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: 24),
-                                ElevatedButton(
-                                  onPressed: _loadRideHistory,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.deepPurple,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                  child: const Text('Retry'),
-                                ),
-                              ],
-                            ),
-                          )
-                        : _rides.isEmpty
-                            ? Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Container(
-                                      width: 80,
-                                      height: 80,
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
-                                          colors: [
-                                            Colors.amber,
-                                            Colors.amber.shade600,
-                                          ],
-                                        ),
-                                        borderRadius: BorderRadius.circular(20),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.amber.withValues(
-                                              alpha: 0.4,
-                                            ),
-                                            blurRadius: 25,
-                                            spreadRadius: 8,
-                                            offset: const Offset(0, 8),
-                                          ),
-                                          BoxShadow(
-                                            color: Colors.black.withValues(
-                                              alpha: 0.1,
-                                            ),
-                                            blurRadius: 15,
-                                            offset: const Offset(0, 4),
-                                          ),
-                                        ],
-                                      ),
-                                      child: const Icon(
-                                        Icons.history,
-                                        size: 40,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 24),
-                                    const Text(
-                                      'No ride history yet',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    const Text(
-                                      'Your completed rides will appear here',
-                                      style: TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              )
-                            : Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                  vertical: 10,
-                                ),
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                      colors: [
-                                        Colors.white,
-                                        Colors.grey.shade50,
-                                      ],
-                                    ),
-                                    borderRadius: BorderRadius.circular(28),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.12,
-                                        ),
-                                        blurRadius: 40,
-                                        spreadRadius: 0,
-                                        offset: const Offset(0, 15),
-                                      ),
-                                      BoxShadow(
-                                        color: Colors.deepPurple.withValues(
-                                          alpha: 0.08,
-                                        ),
-                                        blurRadius: 20,
-                                        spreadRadius: -5,
-                                        offset: const Offset(0, 5),
-                                      ),
-                                    ],
-                                    border: Border.all(
-                                      color: Colors.white.withValues(alpha: 0.8),
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                  child: ListView.builder(
-                                    shrinkWrap: true,
-                                    physics: const NeverScrollableScrollPhysics(),
-                                    padding: const EdgeInsets.all(16),
-                                    itemCount: _rides.length,
-                                    itemBuilder: (context, index) {
-                                      final ride = _rides[index];
-                                      return _buildRideCard(ride);
-                                    },
-                                  ),
-                                ),
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.error, color: Colors.red, size: 48),
+                            const SizedBox(height: 16),
+                            Text(
+                              _error!,
+                              style: const TextStyle(
+                                color: Colors.red,
+                                fontSize: 16,
                               ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 24),
+                            ElevatedButton(
+                              onPressed: _loadRideHistory,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.deepPurple,
+                                foregroundColor: Colors.white,
+                              ),
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : _rides.isEmpty &&
+                          _pendingSharedRides.isEmpty &&
+                          _acceptedSharedRides.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: 80,
+                              height: 80,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [Colors.amber, Colors.amber.shade600],
+                                ),
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.amber.withValues(alpha: 0.4),
+                                    blurRadius: 25,
+                                    spreadRadius: 8,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.1),
+                                    blurRadius: 15,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.history,
+                                size: 40,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            const Text(
+                              'No ride history yet',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Your completed rides will appear here',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 10,
+                        ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [Colors.white, Colors.grey.shade50],
+                            ),
+                            borderRadius: BorderRadius.circular(28),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.12),
+                                blurRadius: 40,
+                                spreadRadius: 0,
+                                offset: const Offset(0, 15),
+                              ),
+                              BoxShadow(
+                                color: Colors.deepPurple.withValues(
+                                  alpha: 0.08,
+                                ),
+                                blurRadius: 20,
+                                spreadRadius: -5,
+                                offset: const Offset(0, 5),
+                              ),
+                            ],
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.8),
+                              width: 1.5,
+                            ),
+                          ),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _rides.length,
+                            itemBuilder: (context, index) {
+                              final ride = _rides[index];
+                              return _buildRideCard(ride);
+                            },
+                          ),
+                        ),
+                      ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPendingSharedRideCard(Map<String, dynamic> sharedRide) {
+    final requesterDetails =
+        sharedRide['requesterDetails'] as Map<String, dynamic>?;
+    final requesterName =
+        requesterDetails?['name'] as String? ?? 'Unknown User';
+    final numberOfMembers = sharedRide['numberOfMembers'] as int? ?? 1;
+    final requesterRideDetails =
+        sharedRide['requesterRideDetails'] as Map<String, dynamic>?;
+    final requesterPickup =
+        requesterRideDetails?['pickupAddress'] as String? ?? 'Unknown pickup';
+    final requesterDestination =
+        requesterRideDetails?['destinationAddress'] as String? ??
+        'Unknown destination';
+    final createdAt = sharedRide['createdAt'] as Timestamp?;
+    final sharedRideId = sharedRide['id'] as String?;
+
+    // Format date
+    String dateText = 'Unknown date';
+    if (createdAt != null) {
+      final date = createdAt.toDate();
+      dateText = '${date.day}/${date.month}/${date.year}';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Ride Sharing Request',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A1A2E),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.orange.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: const Text(
+                  'Pending',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.orange,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'From: $requesterName',
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1A1A2E),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Members: $numberOfMembers',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Their Route:',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1A1A2E),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '$requesterPickup → $requesterDestination',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Requested on: $dateText',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 12),
+          // Action buttons
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              ElevatedButton(
+                onPressed: () {
+                  _showRejectionDialog(sharedRideId!);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Reject'),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () {
+                  _updateSharedRideStatus(sharedRideId!, 'accepted');
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Accept'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAcceptedSharedRideCard(Map<String, dynamic> sharedRide) {
+    final requesterDetails =
+        sharedRide['requesterDetails'] as Map<String, dynamic>?;
+    final requesterName =
+        requesterDetails?['name'] as String? ?? 'Unknown User';
+    final numberOfMembers = sharedRide['numberOfMembers'] as int? ?? 1;
+    final requesterRideDetails =
+        sharedRide['requesterRideDetails'] as Map<String, dynamic>?;
+    final requesterPickup =
+        requesterRideDetails?['pickupAddress'] as String? ?? 'Unknown pickup';
+    final requesterDestination =
+        requesterRideDetails?['destinationAddress'] as String? ??
+        'Unknown destination';
+    final createdAt = sharedRide['createdAt'] as Timestamp?;
+
+    // Format date
+    String dateText = 'Unknown date';
+    if (createdAt != null) {
+      final date = createdAt.toDate();
+      dateText = '${date.day}/${date.month}/${date.year}';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.green.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.green.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Accepted Ride Sharing',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A1A2E),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.green.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: const Text(
+                  'Accepted',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.green,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Shared with: $requesterName',
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1A1A2E),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Members: $numberOfMembers',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Their Route:',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1A1A2E),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '$requesterPickup → $requesterDestination',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Accepted on: $dateText',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
           ),
         ],
       ),
@@ -398,7 +1005,8 @@ class _RideHistoryPageState extends State<RideHistoryPage>
   Widget _buildRideCard(Map<String, dynamic> ride) {
     final status = ride['status'] as String? ?? 'unknown';
     final pickup = ride['pickupAddress'] as String? ?? 'Unknown pickup';
-    final destination = ride['destinationAddress'] as String? ?? 'Unknown destination';
+    final destination =
+        ride['destinationAddress'] as String? ?? 'Unknown destination';
     final fare = ride['fare'] as num?;
     final createdAt = ride['createdAt'] as Timestamp?;
     final driverName = ride['driver']?['name'] as String?;
@@ -407,6 +1015,7 @@ class _RideHistoryPageState extends State<RideHistoryPage>
     final routeSummary = ride['routeSummary'] as Map<String, dynamic>?;
     final distanceKm = routeSummary?['distanceKm'] as num?;
     final durationMin = routeSummary?['durationMin'] as num?;
+    final sharedRides = ride['sharedRides'] as List<dynamic>?;
 
     // Format date
     String dateText = 'Unknown date';
@@ -418,7 +1027,7 @@ class _RideHistoryPageState extends State<RideHistoryPage>
     // Get status color and text
     Color statusColor = Colors.grey;
     String statusText = status;
-    
+
     switch (status.toLowerCase()) {
       case 'completed':
         statusColor = Colors.green;
@@ -479,7 +1088,10 @@ class _RideHistoryPageState extends State<RideHistoryPage>
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: statusColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
@@ -497,7 +1109,7 @@ class _RideHistoryPageState extends State<RideHistoryPage>
             ],
           ),
           const SizedBox(height: 16),
-          
+
           // Ride type
           Row(
             children: [
@@ -525,7 +1137,7 @@ class _RideHistoryPageState extends State<RideHistoryPage>
             ],
           ),
           const SizedBox(height: 16),
-          
+
           // Route information
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -587,7 +1199,7 @@ class _RideHistoryPageState extends State<RideHistoryPage>
             ],
           ),
           const SizedBox(height: 16),
-          
+
           // Route summary (distance and duration)
           if (distanceKm != null || durationMin != null) ...[
             const Divider(),
@@ -621,19 +1233,12 @@ class _RideHistoryPageState extends State<RideHistoryPage>
                       ),
                       const Text(
                         'Distance',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey,
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                     ],
                   ),
                 ],
-                Container(
-                  width: 1,
-                  height: 40,
-                  color: Colors.grey.shade300,
-                ),
+                Container(width: 1, height: 40, color: Colors.grey.shade300),
                 if (durationMin != null) ...[
                   Column(
                     children: [
@@ -660,10 +1265,7 @@ class _RideHistoryPageState extends State<RideHistoryPage>
                       ),
                       const Text(
                         'Duration',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey,
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                     ],
                   ),
@@ -672,7 +1274,7 @@ class _RideHistoryPageState extends State<RideHistoryPage>
             ),
             const SizedBox(height: 16),
           ],
-          
+
           // Driver information (if available)
           if (driverName != null || carModel != null) ...[
             const Divider(),
@@ -721,7 +1323,122 @@ class _RideHistoryPageState extends State<RideHistoryPage>
             ),
             const SizedBox(height: 16),
           ],
-          
+
+          // Shared rides information for pooling rides
+          if (rideType.toLowerCase() == 'pooling' &&
+              sharedRides != null &&
+              sharedRides.isNotEmpty) ...[
+            const Divider(),
+            const SizedBox(height: 16),
+            const Text(
+              'Pooling Details',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1A1A2E),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...sharedRides.map((sharedRide) {
+              final targetRideDetails =
+                  sharedRide['targetRideDetails'] as Map<String, dynamic>?;
+              final targetRiderName =
+                  targetRideDetails?['rider']?['name'] as String? ??
+                  'Unknown Rider';
+              final targetPickup =
+                  targetRideDetails?['pickupAddress'] as String? ??
+                  'Unknown pickup';
+              final targetDestination =
+                  targetRideDetails?['destinationAddress'] as String? ??
+                  'Unknown destination';
+              final numberOfMembers =
+                  sharedRide['numberOfMembers'] as int? ?? 1;
+              final sharedRideStatus =
+                  sharedRide['status'] as String? ?? 'unknown';
+
+              Color sharedStatusColor = Colors.grey;
+              String sharedStatusText = sharedRideStatus;
+
+              switch (sharedRideStatus.toLowerCase()) {
+                case 'pending':
+                  sharedStatusColor = Colors.orange;
+                  sharedStatusText = 'Pending';
+                  break;
+                case 'accepted':
+                  sharedStatusColor = Colors.green;
+                  sharedStatusText = 'Accepted';
+                  break;
+                case 'rejected':
+                  sharedStatusColor = Colors.red;
+                  sharedStatusText = 'Rejected';
+                  break;
+                default:
+                  sharedStatusText =
+                      sharedRideStatus.substring(0, 1).toUpperCase() +
+                      sharedRideStatus.substring(1);
+              }
+
+              return Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Shared with: $targetRiderName',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: sharedStatusColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: sharedStatusColor.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Text(
+                            sharedStatusText,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: sharedStatusColor,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Members: $numberOfMembers',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Their Route: $targetPickup → $targetDestination',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+            const SizedBox(height: 16),
+          ],
+
           // Fare information
           if (fare != null) ...[
             const Divider(),

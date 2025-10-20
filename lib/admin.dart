@@ -1598,6 +1598,7 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
         FirestoreService.getUsersByType('user'),
         FirestoreService.getActiveDrivers(),
         FirestoreService.getPendingDrivers(),
+        FirestoreService.getAllRides(),
       ]),
       builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -1609,6 +1610,7 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
             snapshot.data?[1] as List<Map<String, dynamic>>? ?? [];
         final pendingDrivers =
             snapshot.data?[2] as List<Map<String, dynamic>>? ?? [];
+        final rides = snapshot.data?[3] as List<Map<String, dynamic>>? ?? [];
 
         return Row(
           children: [
@@ -1642,7 +1644,7 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
             Expanded(
               child: _buildStatCard(
                 'Total Rides',
-                '0',
+                '${rides.length}',
                 Icons.directions_car,
                 Colors.deepPurple.shade400,
               ),

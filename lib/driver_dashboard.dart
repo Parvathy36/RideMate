@@ -716,7 +716,20 @@ class _DriverDashboardState extends State<DriverDashboard>
 
   // Helper method to get status color
   Color _getStatusColor(String status) {
-    return Colors.grey;
+    switch (status.toLowerCase()) {
+      case 'requested':
+        return Colors.orange;
+      case 'accepted':
+        return Colors.blue;
+      case 'completed':
+        return Colors.green;
+      case 'rejected':
+        return Colors.red;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
   }
 
   Widget _buildRidesList(List<Map<String, dynamic>> rides) {
@@ -772,9 +785,7 @@ class _DriverDashboardState extends State<DriverDashboard>
       }
 
       // Map docs to list and sort in memory to avoid index requirements
-      final rides = docs
-          .map((doc) => {'id': doc.id, ...doc.data()})
-          .toList()
+      final rides = docs.map((doc) => {'id': doc.id, ...doc.data()}).toList()
         ..sort((a, b) {
           // Sort by createdAt descending in memory
           final aTimestamp = a['createdAt'];
@@ -785,7 +796,10 @@ class _DriverDashboardState extends State<DriverDashboard>
           return 0;
         });
 
-      return rides;
+      // For pooling rides, also fetch shared ride information
+      final updatedRides = await _loadPoolingRideDetails(rides);
+
+      return updatedRides;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -796,6 +810,99 @@ class _DriverDashboardState extends State<DriverDashboard>
         );
       }
       return null;
+    }
+  }
+
+  /// Load additional details for pooling rides by checking shared_rides collection
+  Future<List<Map<String, dynamic>>> _loadPoolingRideDetails(
+    List<Map<String, dynamic>> rides,
+  ) async {
+    final updatedRides = <Map<String, dynamic>>[];
+
+    for (final ride in rides) {
+      final rideType = ride['rideType'] as String? ?? 'Solo';
+
+      // If rideType is pooling, check shared_rides collection
+      if (rideType.toLowerCase() == 'pooling') {
+        try {
+          // Check if there are shared rides for this ride
+          final sharedRides = await _getSharedRidesForRide(
+            ride['id'] as String,
+          );
+
+          // Add shared ride information to the ride
+          if (sharedRides.isNotEmpty) {
+            updatedRides.add({...ride, 'sharedRides': sharedRides});
+          } else {
+            updatedRides.add(ride);
+          }
+        } catch (e) {
+          print('Error checking shared rides for ride ${ride['id']}: $e');
+          // Add ride without shared information if there's an error
+          updatedRides.add(ride);
+        }
+      } else {
+        updatedRides.add(ride);
+      }
+    }
+
+    return updatedRides;
+  }
+
+  /// Get shared rides for a specific ride by checking both requesterRideId and targetRideId
+  Future<List<Map<String, dynamic>>> _getSharedRidesForRide(
+    String rideId,
+  ) async {
+    try {
+      // Query shared_rides where this ride is either the requester or target
+      final sharedRidesSnapshot1 = await FirebaseFirestore.instance
+          .collection('shared_rides')
+          .where('requesterRideId', isEqualTo: rideId)
+          .get();
+
+      final sharedRidesSnapshot2 = await FirebaseFirestore.instance
+          .collection('shared_rides')
+          .where('targetRideId', isEqualTo: rideId)
+          .get();
+
+      final sharedRides = <Map<String, dynamic>>[];
+
+      // Process requester rides
+      for (final doc in sharedRidesSnapshot1.docs) {
+        final sharedRideData = doc.data();
+
+        // Get the target ride details
+        final targetRide = await FirestoreService.getRideById(
+          sharedRideData['targetRideId'] as String,
+        );
+
+        sharedRides.add({
+          'id': doc.id,
+          ...sharedRideData,
+          'targetRideDetails': targetRide,
+        });
+      }
+
+      // Process target rides
+      for (final doc in sharedRidesSnapshot2.docs) {
+        final sharedRideData = doc.data();
+
+        // Get the requester ride details
+        final requesterRide = await FirestoreService.getRideById(
+          sharedRideData['requesterRideId'] as String,
+        );
+
+        sharedRides.add({
+          'id': doc.id,
+          ...sharedRideData,
+          'requesterRideDetails': requesterRide,
+        });
+      }
+
+      return sharedRides;
+    } catch (e) {
+      print('Error fetching shared rides for ride $rideId: $e');
+      return [];
     }
   }
 
@@ -810,14 +917,44 @@ class _DriverDashboardState extends State<DriverDashboard>
     final riderData = ride['rider'] as Map<String, dynamic>?;
     final riderName = riderData?['name'] as String? ?? 'Unknown Rider';
 
+    // Check if this is a pooling ride
+    final rideType = ride['rideType'] as String? ?? 'Solo';
+    final isPoolingRide = rideType.toLowerCase() == 'pooling';
+    final sharedRides = ride['sharedRides'] as List<dynamic>?;
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: const Color(0xFF1A1A2E),
-          title: const Text(
-            'Ride Details',
-            style: TextStyle(color: Colors.white),
+          title: Row(
+            children: [
+              const Text('Ride Details', style: TextStyle(color: Colors.white)),
+              if (isPoolingRide) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.blue.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: const Text(
+                    'POOLING',
+                    style: TextStyle(
+                      color: Colors.blue,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
           content: SingleChildScrollView(
             child: Column(
@@ -928,6 +1065,175 @@ class _DriverDashboardState extends State<DriverDashboard>
                     ),
                   ],
                 ),
+
+                // Shared rides information for pooling rides
+                if (isPoolingRide &&
+                    sharedRides != null &&
+                    sharedRides.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  const Divider(color: Colors.white24),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Pooling Requests:',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...sharedRides.map((sharedRide) {
+                    final sharedRideData = sharedRide as Map<String, dynamic>;
+                    final sharedStatus =
+                        sharedRideData['status'] as String? ?? 'unknown';
+                    final numberOfMembers =
+                        sharedRideData['numberOfMembers'] as int? ?? 1;
+
+                    // Determine if this is requester or target ride
+                    final isRequesterRide =
+                        sharedRideData['requesterRideId'] == ride['id'];
+                    final otherRideDetails = isRequesterRide
+                        ? sharedRideData['targetRideDetails']
+                              as Map<String, dynamic>?
+                        : sharedRideData['requesterRideDetails']
+                              as Map<String, dynamic>?;
+
+                    final otherRiderName =
+                        otherRideDetails?['rider']?['name'] as String? ??
+                        'Unknown Rider';
+                    final otherPickup =
+                        otherRideDetails?['pickupAddress'] as String? ??
+                        'Unknown pickup';
+                    final otherDestination =
+                        otherRideDetails?['destinationAddress'] as String? ??
+                        'Unknown destination';
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.1),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                isRequesterRide
+                                    ? 'Requested by:'
+                                    : 'Requesting:',
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _getStatusColor(
+                                    sharedStatus,
+                                  ).withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  sharedStatus.toUpperCase(),
+                                  style: TextStyle(
+                                    color: _getStatusColor(sharedStatus),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            otherRiderName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Members: $numberOfMembers',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Route:',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.location_on,
+                                color: Colors.amber,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  otherPickup,
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          const Padding(
+                            padding: EdgeInsets.only(left: 10),
+                            child: Icon(
+                              Icons.arrow_downward,
+                              color: Colors.white38,
+                              size: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.location_on,
+                                color: Colors.green,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  otherDestination,
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ],
               ],
             ),
           ),
@@ -968,13 +1274,32 @@ class _DriverDashboardState extends State<DriverDashboard>
               ElevatedButton(
                 onPressed: () async {
                   Navigator.of(context).pop();
-                  // TODO: Implement ride completion logic
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Ride completion feature coming soon'),
-                      backgroundColor: Colors.blue,
-                    ),
-                  );
+                  // Implement ride completion logic
+                  try {
+                    await FirestoreService.updateRideStatus(
+                      ride['id'],
+                      'completed',
+                    );
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Ride marked as completed!'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                      // Refresh the rides dialog to show updated status
+                      _showRidesDialog();
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error completing ride: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blue,
@@ -1697,6 +2022,13 @@ class _DriverDashboardState extends State<DriverDashboard>
                         final riderName =
                             riderData?['name'] as String? ?? 'Unknown Rider';
 
+                        // Check if this is a pooling ride
+                        final rideType = ride['rideType'] as String? ?? 'Solo';
+                        bool isPoolingRide =
+                            rideType.toLowerCase() == 'pooling';
+                        final sharedRides =
+                            ride['sharedRides'] as List<dynamic>?;
+
                         return Container(
                           margin: const EdgeInsets.only(bottom: 16),
                           decoration: BoxDecoration(
@@ -1741,6 +2073,35 @@ class _DriverDashboardState extends State<DriverDashboard>
                                       ),
                                     ),
                                     const Spacer(),
+                                    if (isPoolingRide) ...[
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.blue.withValues(
+                                            alpha: 0.2,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.blue.withValues(
+                                              alpha: 0.4,
+                                            ),
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'POOLING',
+                                          style: TextStyle(
+                                            color: Colors.blue,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -1860,6 +2221,192 @@ class _DriverDashboardState extends State<DriverDashboard>
                                         ),
                                       ],
                                     ),
+
+                                    // Shared rides information for pooling rides
+                                    if (isPoolingRide &&
+                                        sharedRides != null &&
+                                        sharedRides.isNotEmpty) ...[
+                                      const SizedBox(height: 16),
+                                      const Divider(color: Colors.white24),
+                                      const SizedBox(height: 8),
+                                      const Text(
+                                        'Pooling Requests:',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      ...sharedRides.map((sharedRide) {
+                                        final sharedRideData =
+                                            sharedRide as Map<String, dynamic>;
+                                        final sharedStatus =
+                                            sharedRideData['status']
+                                                as String? ??
+                                            'unknown';
+                                        final numberOfMembers =
+                                            sharedRideData['numberOfMembers']
+                                                as int? ??
+                                            1;
+
+                                        // Determine if this is requester or target ride
+                                        final isRequesterRide =
+                                            sharedRideData['requesterRideId'] ==
+                                            ride['id'];
+                                        final otherRideDetails = isRequesterRide
+                                            ? sharedRideData['targetRideDetails']
+                                                  as Map<String, dynamic>?
+                                            : sharedRideData['requesterRideDetails']
+                                                  as Map<String, dynamic>?;
+
+                                        final otherRiderName =
+                                            otherRideDetails?['rider']?['name']
+                                                as String? ??
+                                            'Unknown Rider';
+                                        final otherPickup =
+                                            otherRideDetails?['pickupAddress']
+                                                as String? ??
+                                            'Unknown pickup';
+                                        final otherDestination =
+                                            otherRideDetails?['destinationAddress']
+                                                as String? ??
+                                            'Unknown destination';
+
+                                        return Container(
+                                          margin: const EdgeInsets.only(top: 8),
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.05,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.1,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment
+                                                        .spaceBetween,
+                                                children: [
+                                                  Text(
+                                                    isRequesterRide
+                                                        ? 'Requested by:'
+                                                        : 'Requesting:',
+                                                    style: const TextStyle(
+                                                      color: Colors.white70,
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 6,
+                                                          vertical: 2,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: _getStatusColor(
+                                                        sharedStatus,
+                                                      ).withValues(alpha: 0.2),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                    ),
+                                                    child: Text(
+                                                      sharedStatus
+                                                          .toUpperCase(),
+                                                      style: TextStyle(
+                                                        color: _getStatusColor(
+                                                          sharedStatus,
+                                                        ),
+                                                        fontSize: 8,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                otherRiderName,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                'Members: $numberOfMembers',
+                                                style: const TextStyle(
+                                                  color: Colors.white70,
+                                                  fontSize: 10,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Row(
+                                                children: [
+                                                  const Icon(
+                                                    Icons.location_on,
+                                                    color: Colors.amber,
+                                                    size: 12,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Expanded(
+                                                    child: Text(
+                                                      otherPickup,
+                                                      style: const TextStyle(
+                                                        color: Colors.white70,
+                                                        fontSize: 10,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Row(
+                                                children: [
+                                                  const Icon(
+                                                    Icons.location_on,
+                                                    color: Colors.green,
+                                                    size: 12,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Expanded(
+                                                    child: Text(
+                                                      otherDestination,
+                                                      style: const TextStyle(
+                                                        color: Colors.white70,
+                                                        fontSize: 10,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ],
+
                                     const SizedBox(height: 16),
 
                                     // Action buttons based on status
@@ -1879,10 +2426,15 @@ class _DriverDashboardState extends State<DriverDashboard>
                                                 if (mounted) {
                                                   Navigator.of(context).pop();
                                                   // Show success message
-                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
                                                     const SnackBar(
-                                                      content: Text('Ride accepted successfully!'),
-                                                      backgroundColor: Colors.green,
+                                                      content: Text(
+                                                        'Ride accepted successfully!',
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.green,
                                                     ),
                                                   );
                                                   // Refresh the rides dialog to show updated status
@@ -1890,10 +2442,15 @@ class _DriverDashboardState extends State<DriverDashboard>
                                                 }
                                               } catch (e) {
                                                 if (mounted) {
-                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
                                                     SnackBar(
-                                                      content: Text('Error accepting ride: $e'),
-                                                      backgroundColor: Colors.red,
+                                                      content: Text(
+                                                        'Error accepting ride: $e',
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.red,
                                                     ),
                                                   );
                                                 }
@@ -1928,10 +2485,15 @@ class _DriverDashboardState extends State<DriverDashboard>
                                                 if (mounted) {
                                                   Navigator.of(context).pop();
                                                   // Show success message
-                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
                                                     const SnackBar(
-                                                      content: Text('Ride rejected successfully!'),
-                                                      backgroundColor: Colors.orange,
+                                                      content: Text(
+                                                        'Ride rejected successfully!',
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.orange,
                                                     ),
                                                   );
                                                   // Refresh the rides dialog to show updated status
@@ -1939,10 +2501,15 @@ class _DriverDashboardState extends State<DriverDashboard>
                                                 }
                                               } catch (e) {
                                                 if (mounted) {
-                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
                                                     SnackBar(
-                                                      content: Text('Error rejecting ride: $e'),
-                                                      backgroundColor: Colors.red,
+                                                      content: Text(
+                                                        'Error rejecting ride: $e',
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.red,
                                                     ),
                                                   );
                                                 }
@@ -1976,35 +2543,48 @@ class _DriverDashboardState extends State<DriverDashboard>
                                           ElevatedButton(
                                             onPressed: () async {
                                               Navigator.of(context).pop();
-                                              // TODO: Implement ride completion logic
-                                              ScaffoldMessenger.of(
-                                                context,
-                                              ).showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                    'Ride completion feature coming soon',
-                                                  ),
-                                                  backgroundColor: Colors.blue,
-                                                ),
-                                              );
+                                              // Implement ride completion logic
+                                              try {
+                                                await FirestoreService.updateRideStatus(
+                                                  ride['id'],
+                                                  'completed',
+                                                );
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text(
+                                                        'Ride marked as completed!',
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.green,
+                                                    ),
+                                                  );
+                                                  // Refresh the rides dialog to show updated status
+                                                  _showRidesDialog();
+                                                }
+                                              } catch (e) {
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        'Error completing ride: $e',
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.red,
+                                                    ),
+                                                  );
+                                                }
+                                              }
                                             },
                                             style: ElevatedButton.styleFrom(
                                               backgroundColor: Colors.blue,
                                               foregroundColor: Colors.white,
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 16,
-                                                    vertical: 8,
-                                                  ),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                              ),
                                             ),
-                                            child: const Text(
-                                              'Complete Ride',
-                                              style: TextStyle(fontSize: 12),
-                                            ),
+                                            child: const Text('Complete Ride'),
                                           ),
                                         ],
                                       ),

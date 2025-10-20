@@ -602,7 +602,7 @@ class FirestoreService {
       // Get current ride details
       final currentRide = await getRideById(rideId);
       final targetRide = await getRideById(targetRideId);
-      
+
       if (currentRide == null || targetRide == null) {
         throw Exception('Ride not found');
       }
