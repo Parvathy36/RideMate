@@ -81,10 +81,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final rideId = ride['id'] as String;
     final fare = ride['fare'] as num? ?? 0;
     final pickup = ride['pickupAddress'] as String? ?? 'Unknown pickup';
-    final destination = ride['destinationAddress'] as String? ?? 'Unknown destination';
+    final destination =
+        ride['destinationAddress'] as String? ?? 'Unknown destination';
     final driver = ride['driver'] as Map<String, dynamic>? ?? {};
     final rideType = ride['rideType'] as String? ?? 'Solo';
-    
+
     await showDialog(
       context: context,
       barrierDismissible: false, // Prevent dismissing by tapping outside
@@ -139,7 +140,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               onPressed: () {
                 // Close the dialog
                 Navigator.of(context).pop();
-                
+
                 // Navigate to rides booking page
                 Navigator.of(context).push(
                   MaterialPageRoute(
@@ -169,8 +170,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   // Open Razorpay checkout
   void _openCheckout(String rideId, double amount) {
     var options = {
-      'key':
-          'rzp_test_RVQP1hirXQFCVn', // Provided test key
+      'key': 'rzp_test_RVQP1hirXQFCVn', // Provided test key
       'amount': (amount * 100).toInt(), // Amount in paise
       'name': 'RideMate',
       'description': 'Ride Payment',
@@ -1436,7 +1436,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           padding: EdgeInsets.symmetric(vertical: verticalPadding),
           child: Row(
             children: [
-              Icon(Icons.history, size: iconSize, color: const Color(0xFF1A1A2E)),
+              Icon(
+                Icons.history,
+                size: iconSize,
+                color: const Color(0xFF1A1A2E),
+              ),
               const SizedBox(width: 12),
               Text(
                 'Ride History',

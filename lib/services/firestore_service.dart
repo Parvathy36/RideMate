@@ -14,6 +14,7 @@ class FirestoreService {
   static const String validLicensesCollection = 'valid_licenses';
   static const String carsCollection = 'cars';
   static const String ridesCollection = 'rides';
+  static const String paymentsCollection = 'payments';
 
   // Get license document without validation (for expiry checking)
   static Future<Map<String, dynamic>?> getLicenseDocument(
@@ -96,6 +97,61 @@ class FirestoreService {
         print('❌ Error creating ride request: $e');
       }
       return null;
+    }
+  }
+
+  static Future<void> recordPayment({
+    required String rideId,
+    required double amount,
+    required String method,
+    required String reference,
+    required String issuer,
+    required String payerName,
+    String? rideType,
+    Map<String, dynamic>? driver,
+    Map<String, dynamic>? metadata,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('User not signed in');
+      }
+
+      Map<String, dynamic>? userData;
+      try {
+        userData = await getUserData(user.uid);
+      } catch (_) {
+        userData = null;
+      }
+
+      final paymentRef = _firestore.collection(paymentsCollection).doc();
+      final paymentData = <String, dynamic>{
+        'paymentId': paymentRef.id,
+        'rideId': rideId,
+        'riderId': user.uid,
+        'rider': {
+          'name': userData?['name'] ?? user.displayName ?? 'User',
+          'email': user.email,
+          'phoneNumber': userData?['phoneNumber'],
+        },
+        'method': method,
+        'issuer': issuer,
+        'reference': reference,
+        'payerName': payerName,
+        'amount': amount,
+        'currency': 'INR',
+        'status': 'completed',
+        'rideType': rideType,
+        'driver': driver,
+        'metadata': metadata,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      paymentData.removeWhere((key, value) => value == null);
+      await paymentRef.set(paymentData);
+    } catch (e) {
+      print('❌ Error recording payment: $e');
+      rethrow;
     }
   }
 

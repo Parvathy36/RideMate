@@ -721,6 +721,8 @@ class _DriverDashboardState extends State<DriverDashboard>
         return Colors.orange;
       case 'accepted':
         return Colors.blue;
+      case 'confirmed':
+        return Colors.blue;
       case 'completed':
         return Colors.green;
       case 'rejected':
@@ -1270,7 +1272,7 @@ class _DriverDashboardState extends State<DriverDashboard>
                 ),
                 child: const Text('Reject'),
               ),
-            ] else if (status == 'accepted') ...[
+            ] else if (status == 'accepted' || status == 'confirmed') ...[
               ElevatedButton(
                 onPressed: () async {
                   Navigator.of(context).pop();
@@ -2535,7 +2537,7 @@ class _DriverDashboardState extends State<DriverDashboard>
                                           ),
                                         ],
                                       ),
-                                    ] else if (status == 'accepted') ...[
+                                    ] else if (status == 'accepted' || status == 'confirmed') ...[
                                       Row(
                                         mainAxisAlignment:
                                             MainAxisAlignment.center,

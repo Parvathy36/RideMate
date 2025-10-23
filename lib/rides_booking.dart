@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'services/firestore_service.dart';
-import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 class RidesBookingPage extends StatefulWidget {
   final String rideId;
@@ -24,65 +24,29 @@ class RidesBookingPage extends StatefulWidget {
   State<RidesBookingPage> createState() => _RidesBookingPageState();
 }
 
+class _PaymentDetails {
+  final String method;
+  final String issuer;
+  final String reference;
+  final String payerName;
+
+  const _PaymentDetails({
+    required this.method,
+    required this.issuer,
+    required this.reference,
+    required this.payerName,
+  });
+}
+
 class _RidesBookingPageState extends State<RidesBookingPage> {
   String _selectedPaymentMethod = 'Cash';
   bool _isLoading = false;
   Map<String, dynamic>? _rideData;
-  late Razorpay _razorpay;
 
   @override
   void initState() {
     super.initState();
     _loadRideData();
-    
-    // Initialize Razorpay
-    _razorpay = Razorpay();
-    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
-    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
-    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
-  }
-
-  @override
-  void dispose() {
-    _razorpay.clear(); // Clear Razorpay listeners
-    super.dispose();
-  }
-
-  // Handle payment success
-  void _handlePaymentSuccess(PaymentSuccessResponse response) {
-    print('Payment successful: ${response.paymentId}');
-    
-    // After successful payment, confirm the booking
-    _confirmBookingAfterPayment();
-  }
-
-  // Handle payment error
-  void _handlePaymentError(PaymentFailureResponse response) {
-    print('Payment error: ${response.message}');
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Payment failed: ${response.message}'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  // Handle external wallet
-  void _handleExternalWallet(ExternalWalletResponse response) {
-    print('External wallet: ${response.walletName}');
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Selected wallet: ${response.walletName}'),
-          backgroundColor: Colors.blue,
-        ),
-      );
-    }
   }
 
   Future<void> _loadRideData() async {
@@ -98,77 +62,293 @@ class _RidesBookingPageState extends State<RidesBookingPage> {
     }
   }
 
-  // Open Razorpay checkout
-  void _openCheckout() {
-    var options = {
-      'key': 'rzp_test_RVQP1hirXQFCVn', // Provided test key
-      'amount': (widget.fare * 100).toInt(), // Amount in paise
-      'name': 'RideMate',
-      'description': 'Ride Payment',
-      'prefill': {
-        'contact': '',
-        'email': '',
-      },
-      'external': {
-        'wallets': ['paytm']
-      }
-    };
+  Future<_PaymentDetails?> _showPaymentDialog() async {
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController();
+    final referenceController = TextEditingController();
+    String selectedIssuer = _selectedPaymentMethod == 'UPI'
+        ? 'Google Pay'
+        : 'Visa';
+    bool isProcessing = false;
 
     try {
-      _razorpay.open(options);
-    } catch (e) {
-      print('Error opening Razorpay: $e');
-      // Handle the MissingPluginException by showing an error message and falling back to cash payment
-      if (e.toString().contains('MissingPluginException')) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Payment gateway not available. Please use Cash payment method.'),
-              backgroundColor: Colors.orange,
-            ),
+      final result = await showModalBottomSheet<_PaymentDetails?>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (context, setSheetState) {
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(24),
+                      ),
+                    ),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Align(
+                            alignment: Alignment.center,
+                            child: Container(
+                              width: 40,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade300,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Complete Your Payment',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1A1A2E),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Securely pay using $_selectedPaymentMethod',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.deepPurple.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Amount to Pay',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF1A1A2E),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '₹${widget.fare.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF1A1A2E),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          Form(
+                            key: formKey,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                DropdownButtonFormField<String>(
+                                  value: selectedIssuer,
+                                  decoration: InputDecoration(
+                                    labelText: _selectedPaymentMethod == 'UPI'
+                                        ? 'Preferred UPI App'
+                                        : 'Card Network',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  items:
+                                      (_selectedPaymentMethod == 'UPI'
+                                              ? [
+                                                  'Google Pay',
+                                                  'PhonePe',
+                                                  'Paytm',
+                                                ]
+                                              : ['Visa', 'Mastercard', 'RuPay'])
+                                          .map(
+                                            (option) => DropdownMenuItem(
+                                              value: option,
+                                              child: Text(option),
+                                            ),
+                                          )
+                                          .toList(),
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      setSheetState(() {
+                                        selectedIssuer = value;
+                                      });
+                                    }
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                                TextFormField(
+                                  controller: nameController,
+                                  textInputAction: TextInputAction.next,
+                                  decoration: InputDecoration(
+                                    labelText: 'Payer Name',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) {
+                                      return 'Please enter payer name';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+                                TextFormField(
+                                  controller: referenceController,
+                                  decoration: InputDecoration(
+                                    labelText: _selectedPaymentMethod == 'UPI'
+                                        ? 'UPI Transaction ID'
+                                        : 'Last 4 digits of card',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  keyboardType: _selectedPaymentMethod == 'UPI'
+                                      ? TextInputType.text
+                                      : TextInputType.number,
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) {
+                                      return 'Please enter payment reference';
+                                    }
+                                    if (_selectedPaymentMethod == 'Card' &&
+                                        value.trim().length != 4) {
+                                      return 'Enter last 4 digits';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: isProcessing
+                                      ? null
+                                      : () {
+                                          Navigator.of(context).pop(null);
+                                        },
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                    ),
+                                    side: BorderSide(
+                                      color: Colors.grey.shade300,
+                                    ),
+                                  ),
+                                  child: const Text('Cancel'),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: isProcessing
+                                      ? null
+                                      : () async {
+                                          if (formKey.currentState
+                                                  ?.validate() !=
+                                              true) {
+                                            return;
+                                          }
+                                          setSheetState(() {
+                                            isProcessing = true;
+                                          });
+                                          await Future.delayed(
+                                            const Duration(seconds: 2),
+                                          );
+                                          Navigator.of(context).pop(
+                                            _PaymentDetails(
+                                              method: _selectedPaymentMethod,
+                                              issuer: selectedIssuer,
+                                              reference: referenceController
+                                                  .text
+                                                  .trim(),
+                                              payerName: nameController.text
+                                                  .trim(),
+                                            ),
+                                          );
+                                        },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.deepPurple,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  child: isProcessing
+                                      ? const SizedBox(
+                                          height: 20,
+                                          width: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : Text(
+                                          'Pay ₹${widget.fare.toStringAsFixed(2)}',
+                                        ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
           );
-          // Automatically select cash payment method
-          setState(() {
-            _selectedPaymentMethod = 'Cash';
-            _isLoading = false;
-          });
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Error opening payment gateway'),
-              backgroundColor: Colors.red,
-            ),
-          );
-          setState(() {
-            _isLoading = false;
-          });
-        }
-      }
+        },
+      );
+      return result;
+    } finally {
+      nameController.dispose();
+      referenceController.dispose();
     }
   }
 
-  Future<void> _confirmBookingAfterPayment() async {
-    setState(() {
-      _isLoading = true;
-    });
-
+  Future<void> _finalizeBooking() async {
     try {
-      // Update ride status to confirmed
       await FirestoreService.updateRideStatus(widget.rideId, 'confirmed');
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Booking confirmed successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-
-        // Navigate back to home or to a tracking page
-        Navigator.of(context).popUntil((route) => route.isFirst);
+      if (!mounted) {
+        return;
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Booking confirmed successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -188,50 +368,85 @@ class _RidesBookingPageState extends State<RidesBookingPage> {
   }
 
   Future<void> _confirmBooking() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    // If Cash payment method is selected, confirm booking directly
     if (_selectedPaymentMethod == 'Cash') {
+      // Record cash payment details in Firestore
       try {
-        // Update ride status to confirmed
-        await FirestoreService.updateRideStatus(widget.rideId, 'confirmed');
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Booking confirmed successfully!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-
-          // Navigate back to home or to a tracking page
-          Navigator.of(context).popUntil((route) => route.isFirst);
+        final user = FirebaseAuth.instance.currentUser;
+        Map<String, dynamic>? userData;
+        if (user != null) {
+          userData = await FirestoreService.getUserData(user.uid);
         }
+
+        await FirestoreService.recordPayment(
+          rideId: widget.rideId,
+          amount: widget.fare,
+          method: 'Cash',
+          reference: 'CASH_PAYMENT',
+          issuer: 'N/A',
+          payerName: userData?['name'] ?? user?.displayName ?? 'User',
+          rideType: widget.rideType,
+          driver: widget.driverDetails,
+        );
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error confirming booking: $e'),
+              content: Text('Error recording cash payment: $e'),
               backgroundColor: Colors.red,
             ),
           );
         }
-      } finally {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
+        return;
       }
-    } else {
-      // For other payment methods, open Razorpay
+
       setState(() {
-        _isLoading = false; // Reset loading state for Razorpay
+        _isLoading = true;
       });
-      _openCheckout();
+      await _finalizeBooking();
+      return;
     }
+
+    final paymentCompleted = await _showPaymentDialog();
+    if (paymentCompleted == null || !mounted) {
+      return;
+    }
+
+    // Record payment details in Firestore
+    try {
+      await FirestoreService.recordPayment(
+        rideId: widget.rideId,
+        amount: widget.fare,
+        method: paymentCompleted.method,
+        reference: paymentCompleted.reference,
+        issuer: paymentCompleted.issuer,
+        payerName: paymentCompleted.payerName,
+        rideType: widget.rideType,
+        driver: widget.driverDetails,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error recording payment: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Payment received via ${paymentCompleted.method}'),
+        backgroundColor: Colors.green,
+      ),
+    );
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    await _finalizeBooking();
   }
 
   @override
