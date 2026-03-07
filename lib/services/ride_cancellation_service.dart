@@ -19,7 +19,7 @@ class RideCancellationService {
       // Query for rides with 'requested' status that were created before the timeout
       final querySnapshot = await FirebaseFirestore.instance
           .collection('rides')
-          .where('status', isEqualTo: 'requested')
+          .where('status', isEqualTo: 'request')
           .where('createdAt', isLessThan: timeoutThreshold)
           .get();
       
@@ -129,7 +129,7 @@ class RideCancellationService {
   static Future<void> cancelRideForTimeout(String rideId) async {
     try {
       final ride = await FirestoreService.getRideById(rideId);
-      if (ride != null && ride['status'] == 'requested') {
+      if (ride != null && ride['status'] == 'request') {
         await FirestoreService.cancelRideForTimeout(rideId);
       }
     } catch (e) {
@@ -141,9 +141,9 @@ class RideCancellationService {
   static void scheduleRideCancellation(String rideId, {Duration timeout = cancellationTimeout}) {
     // Use a delayed future to cancel the ride after the timeout
     Future.delayed(timeout).then((_) async {
-      // Check if the ride still has 'requested' status
+      // Check if the ride still has 'request' status
       final ride = await FirestoreService.getRideById(rideId);
-      if (ride != null && ride['status'] == 'requested') {
+      if (ride != null && ride['status'] == 'request') {
         await cancelRideForTimeout(rideId);
       }
     });

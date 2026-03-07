@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'license_validation_service.dart';
+import 'notification_service.dart';
 
 class FirestoreService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -80,7 +81,7 @@ class FirestoreService {
         'pickupLocation': null,
         'destinationLocation': null,
         'status':
-            'requested', // requested -> matched -> enroute -> completed/cancelled
+            'request', // request -> accepted -> ongoing -> completed/cancelled/rejected
         'driverId': null,
         'participants': [user.uid],
         'createdAt': FieldValue.serverTimestamp(),
@@ -710,7 +711,7 @@ class FirestoreService {
   }) async {
     try {
       final updateData = {
-        'status': 'requested',
+        'status': 'request',
         'driverId': driverId,
         'driver': {
           'id': driverId,
@@ -741,8 +742,11 @@ class FirestoreService {
   // Cancel ride due to timeout
   static Future<void> cancelRideForTimeout(String rideId) async {
     try {
+      final rideData = await getRideById(rideId);
+      if (rideData == null) return;
+
       final updateData = {
-        'status': 'cancelled',
+        'status': 'cancelled_due_to_timeout',
         'cancellationReason': 'Driver did not respond within 5 minutes',
         'cancelledAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
@@ -752,6 +756,18 @@ class FirestoreService {
           .collection(ridesCollection)
           .doc(rideId)
           .update(updateData);
+
+      // Notify the rider
+      final riderId = rideData['riderId'] as String?;
+      if (riderId != null) {
+        await NotificationService.createRideNotification(
+          rideId: rideId,
+          userId: riderId,
+          message:
+              'Your ride request was cancelled because the driver did not respond in time.',
+          type: 'cancelled',
+        );
+      }
     } catch (e) {
       print('❌ Error cancelling ride for timeout: $e');
       rethrow;
@@ -778,6 +794,89 @@ class FirestoreService {
     } catch (e) {
       print('❌ Error updating ride status: $e');
       throw Exception('Failed to update ride status: $e');
+    }
+  }
+
+  // Accept a ride request
+  static Future<void> acceptRide(String rideId) async {
+    try {
+      final rideData = await getRideById(rideId);
+      if (rideData == null) throw Exception('Ride not found');
+
+      await updateRideStatus(rideId, 'accepted', additionalData: {
+        'acceptedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Notify the rider
+      final riderId = rideData['riderId'] as String?;
+      if (riderId != null) {
+        await NotificationService.createRideNotification(
+          rideId: rideId,
+          userId: riderId,
+          message: 'Your ride request has been accepted by the driver!',
+          type: 'accepted',
+        );
+      }
+    } catch (e) {
+      print('❌ Error accepting ride: $e');
+      rethrow;
+    }
+  }
+
+  // Reject a ride request
+  static Future<void> rejectRide(String rideId, {String? reason}) async {
+    try {
+      final rideData = await getRideById(rideId);
+      if (rideData == null) throw Exception('Ride not found');
+
+      await updateRideStatus(rideId, 'rejected', additionalData: {
+        'rejectedAt': FieldValue.serverTimestamp(),
+        'rejectionReason': reason,
+      });
+
+      // Notify the rider
+      final riderId = rideData['riderId'] as String?;
+      if (riderId != null) {
+        final message = (reason != null && reason.isNotEmpty)
+            ? 'Your ride request was rejected. Reason: $reason'
+            : 'Your ride request was rejected by the driver.';
+
+        await NotificationService.createRideNotification(
+          rideId: rideId,
+          userId: riderId,
+          message: message,
+          type: 'rejected',
+        );
+      }
+    } catch (e) {
+      print('❌ Error rejecting ride: $e');
+      rethrow;
+    }
+  }
+
+  // Start a ride trip
+  static Future<void> startRide(String rideId) async {
+    try {
+      final rideData = await getRideById(rideId);
+      if (rideData == null) throw Exception('Ride not found');
+
+      await updateRideStatus(rideId, 'ongoing', additionalData: {
+        'startedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Notify the rider
+      final riderId = rideData['riderId'] as String?;
+      if (riderId != null) {
+        await NotificationService.createRideNotification(
+          rideId: rideId,
+          userId: riderId,
+          message: 'Your ride has started! Enjoy your trip.',
+          type: 'ongoing',
+        );
+      }
+    } catch (e) {
+      print('❌ Error starting ride: $e');
+      rethrow;
     }
   }
 
@@ -1527,11 +1626,11 @@ class FirestoreService {
         print('    Destination: ${data['destinationAddress'] ?? 'N/A'}');
       }
 
-      // 4. Check rides with this driver ID and status='requested'
+      // 4. Check rides with this driver ID and status='request'
       final requestedRides = await _firestore
           .collection(ridesCollection)
           .where('driverId', isEqualTo: driverId)
-          .where('status', isEqualTo: 'requested')
+          .where('status', isEqualTo: 'request')
           .get();
       print(
         '📬 Rides with driverId=$driverId and status=requested: ${requestedRides.size}',

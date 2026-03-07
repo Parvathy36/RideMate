@@ -22,7 +22,7 @@ class DriverAssignmentService {
     String? driverImageUrl,
   }) async {
     try {
-      // Update ride with driver information and set status to 'requested'
+      // Update ride with driver information and set status to 'request'
       await FirestoreService.updateRideWithDriver(
         rideId: rideId,
         driverId: driverId,
@@ -51,18 +51,11 @@ class DriverAssignmentService {
   static void scheduleDriverAcceptanceTimeout(String rideId) {
     Future.delayed(driverAcceptanceTimeout).then((_) async {
       try {
-        // Check if the ride still has 'requested' status
+        // Check if the ride still has 'request' status
         final ride = await FirestoreService.getRideById(rideId);
-        if (ride != null && ride['status'] == 'requested') {
-          // Cancel the ride due to timeout
-          await FirestoreService.updateRideStatus(
-            rideId,
-            'cancelled',
-            additionalData: {
-              'cancellationReason': 'Driver did not accept within 5 minutes',
-              'cancelledAt': FieldValue.serverTimestamp(),
-            },
-          );
+        if (ride != null && ride['status'] == 'request') {
+          // Cancel the ride due to timeout using service method which handles notifications
+          await FirestoreService.cancelRideForTimeout(rideId);
           print('Ride $rideId cancelled due to driver acceptance timeout');
         }
       } catch (e) {

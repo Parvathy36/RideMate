@@ -26,10 +26,21 @@ class Notification {
       throw Exception('Notification data is null');
     }
 
+    DateTime timestamp;
+    final dynamic rawTimestamp = data['timestamp'];
+    
+    if (rawTimestamp is Timestamp) {
+      timestamp = rawTimestamp.toDate();
+    } else if (rawTimestamp is DateTime) {
+      timestamp = rawTimestamp;
+    } else {
+      timestamp = DateTime.now();
+    }
+
     return Notification(
       id: doc.id,
       message: data['message'] as String? ?? '',
-      timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      timestamp: timestamp,
       isRead: data['isRead'] as bool? ?? false,
       rideId: data['rideId'] as String?,
       type: data['type'] as String?,
@@ -56,14 +67,17 @@ class NotificationService {
   // Create a new notification
   static Future<String?> createNotification({
     required String message,
+    String? userId,
     String? rideId,
     String? type,
     bool isRead = false,
   }) async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) {
-        throw Exception('User not signed in');
+      final currentUserId = _auth.currentUser?.uid;
+      final targetUserId = userId ?? currentUserId;
+
+      if (targetUserId == null) {
+        throw Exception('No recipient user ID provided and no user signed in');
       }
 
       final notificationRef = _firestore
@@ -71,7 +85,7 @@ class NotificationService {
           .doc(); // Auto-generated ID
 
       final notificationData = {
-        'userId': user.uid,
+        'userId': targetUserId,
         'message': message,
         'timestamp': FieldValue.serverTimestamp(),
         'isRead': isRead,
@@ -98,12 +112,15 @@ class NotificationService {
       return _firestore
           .collection(notificationsCollection)
           .where('userId', isEqualTo: user.uid)
-          .orderBy('timestamp', descending: true)
           .snapshots()
           .map((snapshot) {
-        return snapshot.docs
+        final notifications = snapshot.docs
             .map((doc) => Notification.fromFirestore(doc))
             .toList();
+        
+        // Sort client-side to avoid index requirements
+        notifications.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+        return notifications;
       });
     } catch (e) {
       print('Error getting notifications: $e');
@@ -217,11 +234,13 @@ class NotificationService {
     required String rideId,
     required String message,
     required String type, // 'cancelled', 'accepted', 'completed', etc.
+    String? userId,
   }) async {
     return createNotification(
       message: message,
       rideId: rideId,
       type: 'ride_$type',
+      userId: userId,
     );
   }
 }

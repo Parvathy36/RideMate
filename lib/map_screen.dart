@@ -11,7 +11,6 @@ import 'config/app_config.dart';
 import 'home.dart';
 import 'rides_booking.dart';
 import 'ride_pooling.dart';
-import 'live_tracking_map.dart';
 import 'utils/responsive_utils.dart';
 
 class _OsrmRoute {
@@ -987,7 +986,7 @@ class _MapScreenState extends State<MapScreen> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () async {
-                _showDriverDetailsDialog(driver, fare, distanceKm);
+                await _selectDriver(driver, fare, distanceKm);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.deepPurple,
@@ -1014,178 +1013,6 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  // Show driver details dialog
-  void _showDriverDetailsDialog(Driver driver, double fare, double distanceKm) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Colors.deepPurple.withValues(alpha: 0.15),
-                          Colors.deepPurple.withValues(alpha: 0.25),
-                        ],
-                      ),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.deepPurple.withValues(alpha: 0.2),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.person,
-                      color: Colors.deepPurple,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Text(
-                      driver.name,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1A1A2E),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.star, color: Colors.amber, size: 18),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${driver.rating.toStringAsFixed(1)} Rating',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Vehicle Details',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.deepPurple,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                _buildDetailRow('Model', driver.carModel),
-                _buildDetailRow('Number', driver.carNumber),
-                const SizedBox(height: 16),
-                const Text(
-                  'Contact Information',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.deepPurple,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                _buildDetailRow('Email', driver.email ?? 'Not provided'),
-                _buildDetailRow('Phone', driver.phoneNumber ?? 'Not provided'),
-                const SizedBox(height: 16),
-                const Text(
-                  'Trip Details',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.deepPurple,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                _buildDetailRow('Distance', '${distanceKm.toStringAsFixed(1)} km'),
-                _buildDetailRow('Estimated Fare', '₹${fare.toStringAsFixed(0)}'),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-              },
-              child: const Text(
-                'CLOSE',
-                style: TextStyle(color: Colors.grey),
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.of(context).pop(); // Close dialog
-                await _selectDriver(driver, fare, distanceKm);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.deepPurple,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('CONFIRM DRIVER'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // Build detail row widget
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              '$label:',
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 14,
-                color: Color(0xFF1A1A2E),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   // Select driver and proceed with booking
   Future<void> _selectDriver(Driver driver, double fare, double distanceKm) async {
@@ -1252,14 +1079,11 @@ class _MapScreenState extends State<MapScreen> {
         },
       );
 
-      // Update ride status to confirmed
-      await FirestoreService.updateRideStatus(widget.rideId, 'confirmed');
-
       // Show success message
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Booking confirmed! Driver assigned.'),
+            content: Text('Ride request sent to driver!'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 2),
           ),

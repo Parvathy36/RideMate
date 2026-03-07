@@ -1304,7 +1304,7 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
                     // Get status color
                     Color statusColor;
                     switch (status.toLowerCase()) {
-                      case 'requested':
+                      case 'request':
                         statusColor = Colors.orange;
                         break;
                       case 'accepted':

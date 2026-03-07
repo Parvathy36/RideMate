@@ -77,7 +77,7 @@ class _RidePoolingPageState extends State<RidePoolingPage> {
 
           // Check if status is appropriate for pooling
           final status = ride['status'] as String? ?? '';
-          if (status != 'requested' && status != 'matched') return false;
+          if (status != 'request' && status != 'matched') return false;
 
           // Check if destination matches (simple string matching for now)
           final rideDestination = ride['destinationAddress'] as String? ?? '';

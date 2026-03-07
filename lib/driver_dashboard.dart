@@ -764,18 +764,20 @@ class _DriverDashboardState extends State<DriverDashboard>
   // Helper method to get status color
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
-      case 'requested':
+      case 'request':
         return Colors.orange;
       case 'accepted':
         return Colors.blue;
-      case 'confirmed':
-        return Colors.blue;
+      case 'ongoing':
+        return Colors.purple;
       case 'completed':
         return Colors.green;
       case 'rejected':
         return Colors.red;
       case 'cancelled':
         return Colors.red;
+      case 'cancelled_due_to_timeout':
+        return Colors.red.shade700;
       default:
         return Colors.grey;
     }
@@ -1296,11 +1298,33 @@ class _DriverDashboardState extends State<DriverDashboard>
                 style: TextStyle(color: Colors.white70),
               ),
             ),
-            if (status == 'requested') ...[
+            if (status == 'request') ...[
               ElevatedButton(
                 onPressed: () async {
                   // Accept ride
-                  Navigator.of(context).pop();
+                  try {
+                    await FirestoreService.acceptRide(ride['id']);
+                    if (mounted) {
+                      Navigator.of(context).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Ride accepted!'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                      // Refresh the rides list
+                      _showRidesDialog();
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error accepting ride: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green,
@@ -1310,8 +1334,36 @@ class _DriverDashboardState extends State<DriverDashboard>
               ),
               ElevatedButton(
                 onPressed: () async {
-                  // Reject ride
-                  Navigator.of(context).pop();
+                  // Reject ride - ask for reason
+                  final String? reason = await _showRejectMessageDialog();
+                  if (reason != null) {
+                    try {
+                      await FirestoreService.rejectRide(
+                        ride['id'],
+                        reason: reason,
+                      );
+                      if (mounted) {
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Ride rejected.'),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                        // Refresh the rides list
+                        _showRidesDialog();
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error rejecting ride: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  }
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
@@ -1320,6 +1372,40 @@ class _DriverDashboardState extends State<DriverDashboard>
                 child: const Text('Reject'),
               ),
             ] else if (status == 'accepted' || status == 'confirmed') ...[
+              ElevatedButton(
+                onPressed: () async {
+                  // Start ride trip
+                  try {
+                    await FirestoreService.startRide(ride['id']);
+                    if (mounted) {
+                      Navigator.of(context).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Ride started!'),
+                          backgroundColor: Colors.purple,
+                        ),
+                      );
+                      // Refresh the rides list
+                      _showRidesDialog();
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error starting ride: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Start Trip'),
+              ),
+            ] else if (status == 'ongoing') ...[
               ElevatedButton(
                 onPressed: () async {
                   Navigator.of(context).pop();
@@ -1357,6 +1443,67 @@ class _DriverDashboardState extends State<DriverDashboard>
                 child: const Text('Complete Ride'),
               ),
             ],
+          ],
+        );
+      },
+    );
+  }
+
+  Future<String?> _showRejectMessageDialog() async {
+    final TextEditingController reasonController = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1A1A2E),
+          title: const Text(
+            'Reject Ride Request',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Please provide a reason for rejecting this ride.',
+                style: TextStyle(color: Colors.white70),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: reasonController,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'e.g., Too far away, Car trouble...',
+                  hintStyle: const TextStyle(color: Colors.white38),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: Colors.white24),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: Colors.amber),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context, reasonController.text.trim());
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Reject'),
+            ),
           ],
         );
       },
@@ -1725,7 +1872,7 @@ class _DriverDashboardState extends State<DriverDashboard>
     final sampleRides = [
       {
         'id': 'test_ride_1',
-        'status': 'requested',
+        'status': 'request',
         'pickupAddress': 'Test Pickup Location',
         'destinationAddress': 'Test Destination',
         'fare': 250,
@@ -2459,7 +2606,7 @@ class _DriverDashboardState extends State<DriverDashboard>
                                     const SizedBox(height: 16),
 
                                     // Action buttons based on status
-                                    if (status == 'requested') ...[
+                                    if (status == 'request') ...[
                                       Row(
                                         mainAxisAlignment:
                                             MainAxisAlignment.spaceEvenly,
@@ -2467,14 +2614,9 @@ class _DriverDashboardState extends State<DriverDashboard>
                                           ElevatedButton(
                                             onPressed: () async {
                                               // Accept ride - update status to 'accepted'
-                                              // First cancel any existing timeout timer for this ride
-                                              RideCancellationService.cancelRideForTimeout(
-                                                ride['id'],
-                                              );
                                               try {
-                                                await FirestoreService.updateRideStatus(
+                                                await FirestoreService.acceptRide(
                                                   ride['id'],
-                                                  'accepted',
                                                 );
                                                 // Start location tracking when accepting a ride
                                                 await _startLocationTracking();
@@ -2531,42 +2673,46 @@ class _DriverDashboardState extends State<DriverDashboard>
                                           ),
                                           ElevatedButton(
                                             onPressed: () async {
-                                              // Reject ride - update status to 'rejected'
-                                              try {
-                                                await FirestoreService.updateRideStatus(
-                                                  ride['id'],
-                                                  'rejected',
-                                                );
-                                                if (mounted) {
-                                                  Navigator.of(context).pop();
-                                                  // Show success message
-                                                  ScaffoldMessenger.of(
-                                                    context,
-                                                  ).showSnackBar(
-                                                    const SnackBar(
-                                                      content: Text(
-                                                        'Ride rejected successfully!',
-                                                      ),
-                                                      backgroundColor:
-                                                          Colors.orange,
-                                                    ),
+                                              // Reject ride - ask for reason
+                                              final String? reason =
+                                                  await _showRejectMessageDialog();
+                                              if (reason != null) {
+                                                try {
+                                                  await FirestoreService.rejectRide(
+                                                    ride['id'],
+                                                    reason: reason,
                                                   );
-                                                  // Refresh the rides dialog to show updated status
-                                                  _showRidesDialog();
-                                                }
-                                              } catch (e) {
-                                                if (mounted) {
-                                                  ScaffoldMessenger.of(
-                                                    context,
-                                                  ).showSnackBar(
-                                                    SnackBar(
-                                                      content: Text(
-                                                        'Error rejecting ride: $e',
+                                                  if (mounted) {
+                                                    Navigator.of(context).pop();
+                                                    // Show success message
+                                                    ScaffoldMessenger.of(
+                                                      context,
+                                                    ).showSnackBar(
+                                                      const SnackBar(
+                                                        content: Text(
+                                                          'Ride rejected successfully!',
+                                                        ),
+                                                        backgroundColor:
+                                                            Colors.orange,
                                                       ),
-                                                      backgroundColor:
-                                                          Colors.red,
-                                                    ),
-                                                  );
+                                                    );
+                                                    // Refresh the rides dialog
+                                                    _showRidesDialog();
+                                                  }
+                                                } catch (e) {
+                                                  if (mounted) {
+                                                    ScaffoldMessenger.of(
+                                                      context,
+                                                    ).showSnackBar(
+                                                      SnackBar(
+                                                        content: Text(
+                                                          'Error rejecting ride: $e',
+                                                        ),
+                                                        backgroundColor:
+                                                            Colors.red,
+                                                      ),
+                                                    );
+                                                  }
                                                 }
                                               }
                                             },
@@ -2591,7 +2737,8 @@ class _DriverDashboardState extends State<DriverDashboard>
                                         ],
                                       ),
                                     ] else if (status == 'accepted' ||
-                                        status == 'confirmed') ...[
+                                        status == 'confirmed' ||
+                                        status == 'ongoing') ...[
                                       Row(
                                         mainAxisAlignment:
                                             MainAxisAlignment.center,

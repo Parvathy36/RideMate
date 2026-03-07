@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/firestore_service.dart';
 import 'services/auth_service.dart';
-import 'screens/live_driver_location_screen.dart';
 
 class RideHistoryPage extends StatefulWidget {
   const RideHistoryPage({super.key});
@@ -1254,35 +1253,7 @@ class _RideHistoryPageState extends State<RideHistoryPage>
                 _buildDetailRow('Ride Ended Time', (status == 'completed' || status == 'cancelled') ? '$dateText $endedTime' : 'N/A'),
                 const SizedBox(height: 20),
 
-                // Live Driver Location button for active rides
-                if (status == 'accepted' || status == 'enroute' || status == 'arrived' || status == 'in_progress')
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => LiveDriverLocationScreen(rideId: ride['id']),
-                          ),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.deepPurple,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        'Live Driver Location',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
+                const SizedBox(height: 20),
               ],
             ),
           ),
