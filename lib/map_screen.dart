@@ -1,14 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 import 'services/firestore_service.dart';
 import 'config/app_config.dart';
+import 'home.dart';
 import 'rides_booking.dart';
 import 'ride_pooling.dart';
+import 'live_tracking_map.dart';
+import 'utils/responsive_utils.dart';
 
 class _OsrmRoute {
   _OsrmRoute({
@@ -330,6 +334,9 @@ class _MapScreenState extends State<MapScreen> {
       );
     }
 
+    // Add nearby driver markers
+    _addNearbyDriverMarkers(markers);
+
     if (_route.isNotEmpty) {
       polylines.add(
         Polyline(points: _route, color: Colors.deepPurple, strokeWidth: 5.0),
@@ -550,7 +557,7 @@ class _MapScreenState extends State<MapScreen> {
                               const SizedBox(width: 16),
                               const Expanded(
                                 child: Text(
-                                  'Available Drivers',
+                                  'Nearby Drivers (5km) - Map & List',
                                   style: TextStyle(
                                     fontSize: 20,
                                     fontWeight: FontWeight.w800,
@@ -572,15 +579,106 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  // Fetch available drivers from Firestore
+  // Fetch available drivers from Firestore (proximity-based)
   Future<List<Driver>> _getAvailableDrivers() async {
     try {
-      final driversData = await FirestoreService.getAvailableDrivers();
+      // Ensure pickup location is available
+      if (_pickup == null) {
+        print('❌ Pickup location not available');
+        return [];
+      }
+
+      print('🔍 Fetching nearby drivers for pickup at (${_pickup!.latitude}, ${_pickup!.longitude})');
+      
+      // Fetch drivers within 5km radius of pickup location (strictly enforced)
+      final driversData = await FirestoreService.getNearbyAvailableDrivers(
+        pickupLatitude: _pickup!.latitude,
+        pickupLongitude: _pickup!.longitude,
+        radiusInKm: 5.0, // Strict 5km radius limit
+      );
+      
+      print('📊 Found ${driversData.length} nearby drivers within 5km radius');
+      
+      // Convert to Driver objects
       return driversData.map((data) => Driver.fromFirestore(data)).toList();
     } catch (e) {
-      print('Error fetching drivers: $e');
+      print('❌ Error fetching nearby drivers: $e');
       // Return empty list on error
       return [];
+    }
+  }
+
+  // Add nearby driver markers to the map
+  void _addNearbyDriverMarkers(Set<Marker> markers) {
+    // This will be called after drivers are loaded in the FutureBuilder
+    // For now, we'll load drivers asynchronously and update markers
+    _loadAndAddDriverMarkers(markers);
+  }
+
+  // Load drivers and add their markers to the map
+  Future<void> _loadAndAddDriverMarkers(Set<Marker> markers) async {
+    try {
+      // Ensure pickup location is available
+      if (_pickup == null) return;
+
+      // Fetch nearby drivers
+      final driversData = await FirestoreService.getNearbyAvailableDrivers(
+        pickupLatitude: _pickup!.latitude,
+        pickupLongitude: _pickup!.longitude,
+        radiusInKm: 5.0, // Strict 5km radius limit
+      );
+
+      print('📍 Adding ${driversData.length} driver markers to map');
+      
+      // Add marker for each nearby driver
+      for (final driverData in driversData) {
+        final currentLocation = driverData['currentLocation'] as GeoPoint?;
+        if (currentLocation != null) {
+          final driverLocation = LatLng(currentLocation.latitude, currentLocation.longitude);
+          final driverName = driverData['name'] as String? ?? 'Driver';
+          final carModel = driverData['carModel'] as String? ?? 'Car';
+          
+          markers.add(
+            Marker(
+              width: 60.0,
+              height: 60.0,
+              point: driverLocation,
+              child: Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.deepPurple.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.local_taxi,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+            ),
+          );
+          
+          print('📍 Added marker for driver: $driverName ($carModel) at (${driverLocation.latitude}, ${driverLocation.longitude})');
+        }
+      }
+      
+      // Update the state to refresh the map
+      if (mounted) {
+        setState(() {
+          _markers = markers;
+        });
+      }
+    } catch (e) {
+      print('❌ Error adding driver markers: $e');
     }
   }
 
@@ -643,7 +741,7 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'No drivers available',
+                    'No nearby drivers found',
                     style: TextStyle(
                       color: Colors.grey.shade600,
                       fontSize: 16,
@@ -652,7 +750,7 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Please try again later',
+                    'No drivers within 5km radius',
                     style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
                   ),
                 ],
@@ -771,6 +869,23 @@ class _MapScreenState extends State<MapScreen> {
                             color: Colors.grey,
                           ),
                         ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.deepPurple.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.deepPurple, width: 1),
+                          ),
+                          child: const Text(
+                            'ON MAP',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.deepPurple,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ],
@@ -825,7 +940,7 @@ class _MapScreenState extends State<MapScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Distance',
+                      'Distance from pickup',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey.shade600,
@@ -872,71 +987,7 @@ class _MapScreenState extends State<MapScreen> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () async {
-                if (driver.userId == null || driver.userId!.isEmpty) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Driver information is incomplete.'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                  return;
-                }
-
-                try {
-                  // Show loading indicator
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Selecting driver...'),
-                      backgroundColor: Colors.deepPurple,
-                      duration: Duration(seconds: 1),
-                    ),
-                  );
-
-                  // Update ride with driver information
-                  await FirestoreService.updateRideWithDriver(
-                    rideId: widget.rideId,
-                    driverId: driver.userId!,
-                    driverName: driver.name,
-                    carModel: driver.carModel,
-                    fare: fare,
-                    carNumber: driver.carNumber,
-                    rating: driver.rating,
-                    distance: distanceKm,
-                    driverEmail: driver.email,
-                    driverPhoneNumber: driver.phoneNumber,
-                    driverImageUrl: driver.imageUrl,
-                  );
-
-                  // Check rideType and navigate accordingly
-                  if (_rideType == 'Pooling') {
-                    // Navigate to ride_pooling page
-                    if (mounted) {
-                      Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              RidePoolingPage(rideId: widget.rideId),
-                        ),
-                      );
-                    }
-                  } else {
-                    // Keep existing functionality for Solo rides
-                    if (mounted) {
-                      Navigator.of(context).pop();
-                    }
-                  }
-                } catch (e) {
-                  // Show error message
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Failed to select driver: $e'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                }
+                _showDriverDetailsDialog(driver, fare, distanceKm);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.deepPurple,
@@ -961,6 +1012,280 @@ class _MapScreenState extends State<MapScreen> {
         ],
       ),
     );
+  }
+
+  // Show driver details dialog
+  void _showDriverDetailsDialog(Driver driver, double fare, double distanceKm) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Colors.deepPurple.withValues(alpha: 0.15),
+                          Colors.deepPurple.withValues(alpha: 0.25),
+                        ],
+                      ),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.deepPurple.withValues(alpha: 0.2),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.person,
+                      color: Colors.deepPurple,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      driver.name,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1A1A2E),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(Icons.star, color: Colors.amber, size: 18),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${driver.rating.toStringAsFixed(1)} Rating',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Vehicle Details',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.deepPurple,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _buildDetailRow('Model', driver.carModel),
+                _buildDetailRow('Number', driver.carNumber),
+                const SizedBox(height: 16),
+                const Text(
+                  'Contact Information',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.deepPurple,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _buildDetailRow('Email', driver.email ?? 'Not provided'),
+                _buildDetailRow('Phone', driver.phoneNumber ?? 'Not provided'),
+                const SizedBox(height: 16),
+                const Text(
+                  'Trip Details',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.deepPurple,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _buildDetailRow('Distance', '${distanceKm.toStringAsFixed(1)} km'),
+                _buildDetailRow('Estimated Fare', '₹${fare.toStringAsFixed(0)}'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+              },
+              child: const Text(
+                'CLOSE',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.of(context).pop(); // Close dialog
+                await _selectDriver(driver, fare, distanceKm);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('CONFIRM DRIVER'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Build detail row widget
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              '$label:',
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 14,
+                color: Color(0xFF1A1A2E),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Select driver and proceed with booking
+  Future<void> _selectDriver(Driver driver, double fare, double distanceKm) async {
+    if (driver.userId == null || driver.userId!.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Driver information is incomplete.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      // Show loading indicator
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecting driver...'),
+          backgroundColor: Colors.deepPurple,
+          duration: Duration(seconds: 1),
+        ),
+      );
+
+      // Update ride with driver information
+      await FirestoreService.updateRideWithDriver(
+        rideId: widget.rideId,
+        driverId: driver.userId!,
+        driverName: driver.name,
+        carModel: driver.carModel,
+        fare: fare,
+        carNumber: driver.carNumber,
+        rating: driver.rating,
+        distance: distanceKm,
+        driverEmail: driver.email,
+        driverPhoneNumber: driver.phoneNumber,
+        driverImageUrl: driver.imageUrl,
+      );
+
+      // Record cash payment automatically
+      final user = FirebaseAuth.instance.currentUser;
+      Map<String, dynamic>? userData;
+      if (user != null) {
+        userData = await FirestoreService.getUserData(user.uid);
+      }
+
+      await FirestoreService.recordPayment(
+        rideId: widget.rideId,
+        amount: fare,
+        method: 'Cash',
+        reference: 'CASH_PAYMENT_AUTO',
+        issuer: 'N/A',
+        payerName: userData?['name'] ?? user?.displayName ?? 'User',
+        rideType: _rideType ?? 'Solo',
+        driver: {
+          'name': driver.name,
+          'carModel': driver.carModel,
+          'carNumber': driver.carNumber,
+          'rating': driver.rating,
+          'email': driver.email,
+          'phoneNumber': driver.phoneNumber,
+          'imageUrl': driver.imageUrl,
+        },
+      );
+
+      // Update ride status to confirmed
+      await FirestoreService.updateRideStatus(widget.rideId, 'confirmed');
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Booking confirmed! Driver assigned.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      // Navigate directly to home page
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => const HomePage(),
+          ),
+          (route) => route.isFirst,
+        );
+      }
+    } catch (e) {
+      // Show error message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to select driver: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
 
@@ -994,10 +1319,21 @@ class Driver {
 
   // Constructor to create Driver from Firestore data
   factory Driver.fromFirestore(Map<String, dynamic> data) {
-    // Calculate distance based on current location (simplified for demo)
-    // In real app, you would calculate distance from user's location
+    // Use distance from pickup if available (calculated by proximity filter)
+    // Otherwise fall back to rating-based distance estimation
     final rating = (data['rating'] as num?)?.toDouble() ?? 0.0;
-    final distance = (data['distance'] as num?)?.toDouble() ?? (2.0 + rating);
+    final distanceFromPickup = data['distanceFromPickup'];
+    
+    double distance;
+    if (distanceFromPickup != null) {
+      // Use the calculated distance from proximity filtering
+      distance = (distanceFromPickup as num).toDouble();
+      print('📍 Using calculated distance: ${distance.toStringAsFixed(2)} km');
+    } else {
+      // Fallback to rating-based estimation
+      distance = (data['distance'] as num?)?.toDouble() ?? (2.0 + rating);
+      print('📍 Using estimated distance: ${distance.toStringAsFixed(2)} km');
+    }
 
     // Calculate fare based on car model
     double baseFare = 50.0;

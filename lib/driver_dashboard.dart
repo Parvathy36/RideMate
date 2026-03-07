@@ -5,7 +5,11 @@ import 'login_page.dart';
 import 'map_screen.dart';
 import 'services/auth_service.dart';
 import 'services/firestore_service.dart';
+import 'services/driver_assignment_service.dart';
+import 'services/ride_cancellation_service.dart';
+import 'services/location_service.dart';
 import 'widgets/driver_image_upload_dialog.dart';
+import 'utils/responsive_utils.dart';
 
 class DriverDashboard extends StatefulWidget {
   const DriverDashboard({super.key});
@@ -17,6 +21,7 @@ class DriverDashboard extends StatefulWidget {
 class _DriverDashboardState extends State<DriverDashboard>
     with TickerProviderStateMixin {
   final AuthService _authService = AuthService();
+  final LocationService _locationService = LocationService();
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
 
@@ -25,6 +30,7 @@ class _DriverDashboardState extends State<DriverDashboard>
   bool _isOnline = false;
   bool _hasShownImageUploadDialog = false;
   int _navIndex = 0;
+  bool _isTracking = false;
 
   Future<void> _loadDriverData() async {
     try {
@@ -323,6 +329,13 @@ class _DriverDashboardState extends State<DriverDashboard>
               'lastStatusUpdate': FieldValue.serverTimestamp(),
             });
 
+        // Start or stop location tracking based on online status
+        if (newStatus) {
+          await _startLocationTracking();
+        } else {
+          await _stopLocationTracking();
+        }
+
         setState(() {
           _isOnline = newStatus;
         });
@@ -352,6 +365,40 @@ class _DriverDashboardState extends State<DriverDashboard>
     }
   }
 
+  /// Start location tracking when driver goes online
+  Future<void> _startLocationTracking() async {
+    try {
+      await _locationService.startTrackingDriverLocation();
+      setState(() {
+        _isTracking = true;
+      });
+      print('Driver location tracking started');
+    } catch (e) {
+      print('Error starting location tracking: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Location tracking error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Stop location tracking when driver goes offline
+  Future<void> _stopLocationTracking() async {
+    try {
+      await _locationService.stopTrackingDriverLocation();
+      setState(() {
+        _isTracking = false;
+      });
+      print('Driver location tracking stopped');
+    } catch (e) {
+      print('Error stopping location tracking: $e');
+    }
+  }
+
   Future<void> _signOut() async {
     try {
       // Set driver offline before signing out
@@ -374,6 +421,9 @@ class _DriverDashboardState extends State<DriverDashboard>
               'isAvailable': false,
               'lastStatusUpdate': FieldValue.serverTimestamp(),
             });
+
+        // Stop location tracking when signing out
+        await _stopLocationTracking();
       }
 
       await _authService.signOut();
@@ -406,12 +456,15 @@ class _DriverDashboardState extends State<DriverDashboard>
               )
             : LayoutBuilder(
                 builder: (context, constraints) {
-                  final bool isWide = constraints.maxWidth >= 1000;
+                  final bool isWide = Responsive.isDesktop(context);
+                  final bool isTablet = Responsive.isTablet(context);
+                  final bool isMobile = Responsive.isMobile(context);
+                  final bool showRail = !isMobile; // Hide rail on mobile, show on tablet/desktop
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _buildQuickActionsRail(extended: isWide),
-                      if (isWide) const SizedBox(width: 12),
+                      if (showRail) _buildQuickActionsRail(extended: isWide),
+                      if (showRail && isWide) const SizedBox(width: 12),
                       Expanded(child: _buildDashboardContent()),
                     ],
                   );
@@ -540,54 +593,48 @@ class _DriverDashboardState extends State<DriverDashboard>
                         const SizedBox(height: 24),
 
                         // Stats Grid
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildStatCard(
-                                'Total Rides',
-                                '${_driverData?['totalRides'] ?? 0}',
-                                Icons.local_taxi,
-                                Colors.blue,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: _buildStatCard(
-                                'Rating',
-                                '${_driverData?['rating']?.toStringAsFixed(1) ?? '0.0'}',
-                                Icons.star,
-                                Colors.amber,
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildStatCard(
-                                'Earnings',
-                                '₹${_driverData?['totalEarnings']?.toStringAsFixed(0) ?? '0'}',
-                                Icons.currency_rupee,
-                                Colors.green,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: _buildStatCard(
-                                'Status',
-                                _driverData?['isApproved'] == true
-                                    ? 'Approved'
-                                    : 'Pending',
-                                Icons.verified,
-                                _driverData?['isApproved'] == true
-                                    ? Colors.green
-                                    : Colors.orange,
-                              ),
-                            ),
-                          ],
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final crossAxisCount = Responsive.getGridCrossAxisCount(context, mobile: 1, tablet: 2, desktop: 2);
+                            return GridView.count(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              crossAxisCount: crossAxisCount,
+                              childAspectRatio: 2.0, // Make cards wider
+                              crossAxisSpacing: 16,
+                              mainAxisSpacing: 16,
+                              children: [
+                                _buildStatCard(
+                                  'Total Rides',
+                                  '${_driverData?['totalRides'] ?? 0}',
+                                  Icons.local_taxi,
+                                  Colors.blue,
+                                ),
+                                _buildStatCard(
+                                  'Rating',
+                                  '${_driverData?['rating']?.toStringAsFixed(1) ?? '0.0'}',
+                                  Icons.star,
+                                  Colors.amber,
+                                ),
+                                _buildStatCard(
+                                  'Earnings',
+                                  '₹${_driverData?['totalEarnings']?.toStringAsFixed(0) ?? '0'}',
+                                  Icons.currency_rupee,
+                                  Colors.green,
+                                ),
+                                _buildStatCard(
+                                  'Status',
+                                  _driverData?['isApproved'] == true
+                                      ? 'Approved'
+                                      : 'Pending',
+                                  Icons.verified,
+                                  _driverData?['isApproved'] == true
+                                      ? Colors.green
+                                      : Colors.orange,
+                                ),
+                              ],
+                            );
+                          },
                         ),
 
                         const SizedBox(height: 24),
@@ -2420,11 +2467,17 @@ class _DriverDashboardState extends State<DriverDashboard>
                                           ElevatedButton(
                                             onPressed: () async {
                                               // Accept ride - update status to 'accepted'
+                                              // First cancel any existing timeout timer for this ride
+                                              RideCancellationService.cancelRideForTimeout(
+                                                ride['id'],
+                                              );
                                               try {
                                                 await FirestoreService.updateRideStatus(
                                                   ride['id'],
                                                   'accepted',
                                                 );
+                                                // Start location tracking when accepting a ride
+                                                await _startLocationTracking();
                                                 if (mounted) {
                                                   Navigator.of(context).pop();
                                                   // Show success message
@@ -2537,7 +2590,8 @@ class _DriverDashboardState extends State<DriverDashboard>
                                           ),
                                         ],
                                       ),
-                                    ] else if (status == 'accepted' || status == 'confirmed') ...[
+                                    ] else if (status == 'accepted' ||
+                                        status == 'confirmed') ...[
                                       Row(
                                         mainAxisAlignment:
                                             MainAxisAlignment.center,
@@ -2551,6 +2605,8 @@ class _DriverDashboardState extends State<DriverDashboard>
                                                   ride['id'],
                                                   'completed',
                                                 );
+                                                // Stop location tracking when ride is completed
+                                                await _stopLocationTracking();
                                                 if (mounted) {
                                                   ScaffoldMessenger.of(
                                                     context,

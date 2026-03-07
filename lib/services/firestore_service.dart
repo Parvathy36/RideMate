@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -737,6 +738,26 @@ class FirestoreService {
     }
   }
 
+  // Cancel ride due to timeout
+  static Future<void> cancelRideForTimeout(String rideId) async {
+    try {
+      final updateData = {
+        'status': 'cancelled',
+        'cancellationReason': 'Driver did not respond within 5 minutes',
+        'cancelledAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      await _firestore
+          .collection(ridesCollection)
+          .doc(rideId)
+          .update(updateData);
+    } catch (e) {
+      print('❌ Error cancelling ride for timeout: $e');
+      rethrow;
+    }
+  }
+
   // Update ride status (e.g., confirmed, cancelled, completed)
   static Future<void> updateRideStatus(
     String rideId,
@@ -918,6 +939,139 @@ class FirestoreService {
     } catch (e) {
       print('❌ Error getting available drivers: $e');
       return [];
+    }
+  }
+
+  // Get nearby available drivers within a specified radius
+  static Future<List<Map<String, dynamic>>> getNearbyAvailableDrivers({
+    required double pickupLatitude,
+    required double pickupLongitude,
+    double radiusInKm = 5.0, // Default 5km radius
+  }) async {
+    try {
+      print('🔍 Fetching nearby drivers within ${radiusInKm}km radius...');
+      print('📍 Pickup location: ($pickupLatitude, $pickupLongitude)');
+
+      // Get all drivers from the collection
+      final querySnapshot = await _firestore
+          .collection(driversCollection)
+          .get();
+
+      print('📋 Total drivers in collection: ${querySnapshot.docs.length}');
+
+      // Filter drivers where both isActive and isApproved are true AND within radius
+      final nearbyDrivers = <Map<String, dynamic>>[];
+
+      for (final doc in querySnapshot.docs) {
+        final data = doc.data();
+        final driverName = data['name'] ?? 'Unknown';
+        final isActive = data['isActive'];
+        final isApproved = data['isApproved'];
+        final currentLocation = data['currentLocation'];
+
+        print('👤 Driver: $driverName (ID: ${doc.id})');
+        print('   - isActive: $isActive');
+        print('   - isApproved: $isApproved');
+        print('   - Current Location: $currentLocation');
+
+        // Check if both isActive and isApproved are true
+        if (isActive == true && isApproved == true) {
+          // Check if driver has current location
+          if (currentLocation != null && currentLocation is GeoPoint) {
+            // Calculate distance between pickup and driver location
+            final driverLat = currentLocation.latitude;
+            final driverLng = currentLocation.longitude;
+            
+            // Calculate distance using Haversine formula
+            final distanceKm = _calculateDistance(
+              pickupLatitude,
+              pickupLongitude,
+              driverLat,
+              driverLng,
+            );
+
+            print('   📍 Driver distance: ${distanceKm.toStringAsFixed(2)} km');
+
+            // Check if driver is within the specified radius
+            if (distanceKm <= radiusInKm) {
+              print('   ✅ Driver is nearby and available!');
+              // Add distance to driver data for display
+              nearbyDrivers.add({
+                'id': doc.id,
+                'distanceFromPickup': distanceKm,
+                ...data,
+              });
+            } else {
+              print('   ❌ Driver is too far away (${distanceKm.toStringAsFixed(2)} km)');
+            }
+          } else {
+            print('   ⚠️ Driver location not available');
+          }
+        } else {
+          print('   ❌ Driver is not available (inactive or not approved)');
+        }
+      }
+
+      print(
+        '📊 Found ${nearbyDrivers.length} nearby drivers within ${radiusInKm}km radius',
+      );
+      return nearbyDrivers;
+    } catch (e) {
+      print('❌ Error getting nearby drivers: $e');
+      return [];
+    }
+  }
+
+  // Helper method to calculate distance between two coordinates (Haversine formula)
+  static double _calculateDistance(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    const earthRadiusKm = 6371.0; // Earth's radius in kilometers
+
+    final dLat = _degreesToRadians(lat2 - lat1);
+    final dLon = _degreesToRadians(lon2 - lon1);
+
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_degreesToRadians(lat1)) *
+            math.cos(_degreesToRadians(lat2)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return earthRadiusKm * c;
+  }
+
+  // Helper method to convert degrees to radians
+  static double _degreesToRadians(double degrees) {
+    return degrees * (math.pi / 180.0);
+  }
+
+  // Utility method to update driver location for testing
+  static Future<void> updateDriverLocation({
+    required String driverId,
+    required double latitude,
+    required double longitude,
+  }) async {
+    try {
+      final locationData = {
+        'currentLocation': GeoPoint(latitude, longitude),
+        'lastLocationUpdate': FieldValue.serverTimestamp(),
+      };
+
+      // Update in both collections
+      await Future.wait([
+        _firestore.collection(usersCollection).doc(driverId).update(locationData),
+        _firestore.collection(driversCollection).doc(driverId).update(locationData),
+      ]);
+
+      print('✅ Driver location updated successfully');
+    } catch (e) {
+      print('❌ Error updating driver location: $e');
+      throw Exception('Failed to update driver location: $e');
     }
   }
 

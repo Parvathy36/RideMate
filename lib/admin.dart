@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/auth_service.dart';
 import 'services/firestore_service.dart';
-import 'services/admin_service.dart';
 import 'login_page.dart';
 
 class AdminPage extends StatefulWidget {
@@ -48,6 +47,7 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
     'Users',
     'Drivers',
     'Rides',
+    'Support Team',
     'Analytics',
     'Settings',
   ];
@@ -505,8 +505,10 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
       case 3:
         return _buildRidesContent();
       case 4:
-        return _buildAnalyticsContent();
+        return _buildSupportTeamContent();
       case 5:
+        return _buildAnalyticsContent();
+      case 6:
         return _buildSettingsContent();
       default:
         return _buildDashboardContent();
@@ -1566,6 +1568,22 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
           ),
         );
       },
+    );
+  }
+
+  // Support Team content
+  Widget _buildSupportTeamContent() {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Create Support Team Member Card
+          _buildCreateSupportTeamCard(),
+          const SizedBox(height: 24),
+          // Existing Support Team Members
+          _buildSupportTeamList(),
+        ],
+      ),
     );
   }
 
@@ -2758,5 +2776,791 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
         ],
       ),
     );
+  }
+
+  // Build create support team member card
+  Widget _buildCreateSupportTeamCard() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.deepPurple, Colors.deepPurple.shade700],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.support_agent,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 16),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Create Support Team Member',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1A1A2E),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Add new support team members to assist users',
+                      style: TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          _buildCreateSupportForm(),
+        ],
+      ),
+    );
+  }
+
+  // Validation methods
+  String? _validateFullName(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter a full name';
+    }
+
+    final trimmedValue = value.trim();
+
+    // Check for leading/trailing spaces
+    if (value != trimmedValue) {
+      return 'Name cannot have leading or trailing spaces';
+    }
+
+    // Check for only letters and single spaces between words
+    if (!RegExp(r'^[A-Za-z]+( [A-Za-z]+)*$').hasMatch(trimmedValue)) {
+      return 'Name can only contain letters and single spaces between words';
+    }
+
+    // Check first letter is capital
+    if (!RegExp(r'^[A-Z]').hasMatch(trimmedValue)) {
+      return 'First letter must be capital';
+    }
+
+    // Check each word starts with capital letter
+    final words = trimmedValue.split(' ');
+    for (final word in words) {
+      if (word.isNotEmpty && !RegExp(r'^[A-Z]').hasMatch(word)) {
+        return 'Each word must start with a capital letter';
+      }
+    }
+
+    return null;
+  }
+
+  String? _validateEmail(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter an email address';
+    }
+
+    final trimmedValue = value.trim();
+
+    // Check for spaces
+    if (value.contains(' ')) {
+      return 'Email cannot contain spaces';
+    }
+
+    // Strict email validation
+    final emailRegex = RegExp(
+      r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+    );
+
+    if (!emailRegex.hasMatch(trimmedValue)) {
+      return 'Please enter a valid email address';
+    }
+
+    // Additional validation for username part
+    final parts = trimmedValue.split('@');
+    if (parts.length != 2) {
+      return 'Email must contain exactly one @ symbol';
+    }
+
+    final username = parts[0];
+    final domain = parts[1];
+
+    // Username validation
+    if (username.isEmpty) {
+      return 'Email must have a username before @';
+    }
+
+    // Domain validation
+    if (domain.isEmpty || !domain.contains('.')) {
+      return 'Email must have a valid domain with extension';
+    }
+
+    final domainParts = domain.split('.');
+    if (domainParts.length < 2) {
+      return 'Email must have a domain extension';
+    }
+
+    final extension = domainParts.last;
+    if (extension.length < 2 || !RegExp(r'^[a-zA-Z]+$').hasMatch(extension)) {
+      return 'Domain extension must be at least 2 letters';
+    }
+
+    return null;
+  }
+
+  String? _validatePhoneNumber(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter a phone number';
+    }
+
+    final trimmedValue = value.trim();
+
+    // Check for spaces
+    if (value.contains(' ')) {
+      return 'Phone number cannot contain spaces';
+    }
+
+    // Check format: +91 followed by 10 digits
+    if (!RegExp(r'^\+91[6-9][0-9]{9}$').hasMatch(trimmedValue)) {
+      if (!trimmedValue.startsWith('+91')) {
+        return 'Phone number must start with +91';
+      }
+      if (trimmedValue.length != 13) {
+        return 'Phone number must have exactly 10 digits after +91';
+      }
+      if (!RegExp(r'^[6-9]').hasMatch(trimmedValue.substring(3, 4))) {
+        return 'Phone number must start with 6, 7, 8, or 9 after +91';
+      }
+      return 'Please enter a valid Indian phone number (+91XXXXXXXXXX)';
+    }
+
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter a password';
+    }
+
+    // Check for spaces
+    if (value.contains(' ')) {
+      return 'Password cannot contain spaces';
+    }
+
+    // Check first letter is capital
+    if (!RegExp(r'^[A-Z]').hasMatch(value)) {
+      return 'Password must start with a capital letter';
+    }
+
+    // Check minimum 4 letters
+    final letterCount = RegExp(r'[A-Za-z]').allMatches(value).length;
+    if (letterCount < 4) {
+      return 'Password must contain at least 4 letters';
+    }
+
+    // Check for at least one special character
+    final specialChars = '!@#\$%^&*(),.?":{}|<>_\-+=\[\]\\;\'\/~`';
+    bool hasSpecialChar = false;
+    for (int i = 0; i < value.length; i++) {
+      if (specialChars.contains(value[i])) {
+        hasSpecialChar = true;
+        break;
+      }
+    }
+    if (!hasSpecialChar) {
+      return 'Password must contain at least one special character';
+    }
+
+    // Check for at least one digit
+    if (!RegExp(r'[0-9]').hasMatch(value)) {
+      return 'Password must contain at least one digit';
+    }
+
+    return null;
+  }
+
+  // Build create support team form
+  Widget _buildCreateSupportForm() {
+    final _formKey = GlobalKey<FormState>();
+    final _nameController = TextEditingController();
+    final _emailController = TextEditingController();
+    final _phoneController = TextEditingController();
+    final _passwordController = TextEditingController();
+    bool _isLoading = false;
+
+    return Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Name Field
+          const Text(
+            'Full Name',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1A1A2E),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _nameController,
+            decoration: InputDecoration(
+              hintText: 'Enter full name (e.g., Parvathy S)',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.deepPurple, width: 2),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
+            ),
+            validator: _validateFullName,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+          ),
+          const SizedBox(height: 16),
+
+          // Email Field
+          const Text(
+            'Email Address',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1A1A2E),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _emailController,
+            keyboardType: TextInputType.emailAddress,
+            decoration: InputDecoration(
+              hintText: 'Enter email address (e.g., parvathys359@gmail.com)',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.deepPurple, width: 2),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
+            ),
+            validator: _validateEmail,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+          ),
+          const SizedBox(height: 16),
+
+          // Phone Number Field
+          const Text(
+            'Phone Number',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1A1A2E),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _phoneController,
+            keyboardType: TextInputType.phone,
+            decoration: InputDecoration(
+              hintText: 'Enter phone number (e.g., +919562829536)',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.deepPurple, width: 2),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
+            ),
+            validator: _validatePhoneNumber,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+          ),
+          const SizedBox(height: 16),
+
+          // Password Field
+          const Text(
+            'Password',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1A1A2E),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _passwordController,
+            obscureText: true,
+            decoration: InputDecoration(
+              hintText: 'Enter password (e.g., Parvathy@123)',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.deepPurple, width: 2),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
+            ),
+            validator: _validatePassword,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+          ),
+          const SizedBox(height: 24),
+
+          // Create Button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _isLoading
+                  ? null
+                  : () async {
+                      if (_formKey.currentState!.validate()) {
+                        setState(() {
+                          _isLoading = true;
+                        });
+
+                        try {
+                          await _createSupportTeamMember(
+                            name: _nameController.text.trim(),
+                            email: _emailController.text.trim(),
+                            phone: _phoneController.text.trim(),
+                            password: _passwordController.text,
+                          );
+
+                          // Clear form
+                          _nameController.clear();
+                          _emailController.clear();
+                          _phoneController.clear();
+                          _passwordController.clear();
+
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Support team member created successfully!',
+                                ),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Error: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        } finally {
+                          if (mounted) {
+                            setState(() {
+                              _isLoading = false;
+                            });
+                          }
+                        }
+                      }
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Text(
+                      'Create Support Team Member',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build support team list
+  Widget _buildSupportTeamList() {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: FirestoreService.getUsersByType('support team'),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                'Error loading support team: ${snapshot.error}',
+                style: const TextStyle(color: Colors.red),
+              ),
+            ),
+          );
+        }
+
+        final supportTeam = snapshot.data ?? [];
+
+        return Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.deepPurple, Colors.deepPurple.shade700],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.groups,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Support Team Members',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1A1A2E),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${supportTeam.length} support team members',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              if (supportTeam.isEmpty)
+                Center(
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.support_agent_outlined,
+                        size: 48,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No support team members found',
+                        style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Create support team members using the form above',
+                        style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: supportTeam.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final member = supportTeam[index];
+                    final name = (member['name'] ?? 'Support Member')
+                        .toString();
+                    final email = (member['email'] ?? '').toString();
+                    final phone = (member['phoneNumber'] ?? '').toString();
+                    final createdAt = member['createdAt'];
+
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: Colors.deepPurple.shade100,
+                            child: Icon(
+                              Icons.support_agent,
+                              color: Colors.deepPurple.shade600,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.email,
+                                      size: 14,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        email,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey[700],
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (phone.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.phone,
+                                        size: 14,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        phone,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.deepPurple.shade50,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Colors.deepPurple.shade200,
+                              ),
+                            ),
+                            child: const Text(
+                              'Support',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.deepPurple,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Create support team member method
+  Future<void> _createSupportTeamMember({
+    required String name,
+    required String email,
+    required String phone,
+    required String password,
+  }) async {
+    try {
+      // Create user in Firebase Authentication
+      final userCredential = await _authService.registerWithEmailAndPassword(
+        email,
+        password,
+        name,
+        isDriver: false, // Not a driver
+      );
+
+      if (userCredential == null) {
+        throw Exception('Failed to create user account');
+      }
+
+      // Update user document in Firestore with userType: 'support team'
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userCredential.user?.uid)
+          .update({
+            'userType': 'support team',
+            'phoneNumber': phone,
+            'createdAt': FieldValue.serverTimestamp(),
+            'createdBy': _authService.currentUser?.uid,
+          });
+
+      // Send welcome email with credentials
+      await _sendWelcomeEmail(email: email, password: password);
+
+      print('✅ Support team member created: $email');
+    } catch (e) {
+      print('❌ Error creating support team member: $e');
+      rethrow;
+    }
+  }
+
+  // Send welcome email with credentials
+  Future<void> _sendWelcomeEmail({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      // In a real implementation, this would use Firebase Cloud Functions or an email service
+      // For now, we'll simulate the email sending
+
+      // This is where you would integrate with:
+      // 1. Firebase Cloud Functions with nodemailer
+      // 2. SendGrid API
+      // 3. SMTP server
+      // 4. Other email service providers
+
+      print('📧 Simulating email to: $email');
+      print('📧 Email content:');
+      print('Subject: Welcome to RideMate Support Team');
+      print(
+        'Body: Your account has been created. Email: $email. Password: $password. Use this password to log in.',
+      );
+
+      // TODO: Implement actual email sending using Firebase Cloud Functions
+      // Example Cloud Function code would be:
+      /*
+      exports.sendSupportWelcomeEmail = functions.firestore
+        .document('users/{userId}')
+        .onCreate(async (snap, context) => {
+          const userData = snap.data();
+          if (userData.userType === 'support team') {
+            // Send email using nodemailer or other service
+            await sendEmail({
+              to: userData.email,
+              subject: 'Welcome to RideMate Support Team',
+              html: `<p>Your account has been created. Email: ${userData.email}. Password: ${userData.tempPassword}. Use this password to log in.</p>`
+            });
+          }
+        });
+      */
+    } catch (e) {
+      print('❌ Error sending welcome email: $e');
+      // Don't throw error as the account creation was successful
+    }
   }
 }

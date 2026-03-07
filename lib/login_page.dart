@@ -8,6 +8,8 @@ import 'admin.dart';
 import 'driver_waiting_page.dart';
 import 'driver_dashboard.dart';
 import 'email_verification_page.dart';
+import 'screens/support_dashboard.dart';
+import 'utils/responsive_utils.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -55,6 +57,13 @@ class _LoginPageState extends State<LoginPage> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => const AdminPage()),
+          );
+          break;
+        case 'support team':
+          print('🔄 Navigating to Support Team Dashboard...');
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const SupportDashboard()),
           );
           break;
         case 'driver':
@@ -208,6 +217,13 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
+    final screenHeight = size.height;
+    final screenWidth = size.width;
+    final isMobile = Responsive.isMobile(context);
+    final isTablet = Responsive.isTablet(context);
+    final headerHeight = isMobile 
+        ? screenHeight * 0.35 
+        : (isTablet ? screenHeight * 0.4 : screenHeight * 0.45);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -223,7 +239,7 @@ class _LoginPageState extends State<LoginPage> {
           children: [
             // Modern Header Section
             Container(
-              height: size.height * 0.45,
+              height: headerHeight,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
@@ -239,11 +255,11 @@ class _LoginPageState extends State<LoginPage> {
                 children: [
                   // Floating design elements
                   Positioned(
-                    right: -60,
-                    top: 80,
+                    right: isMobile ? -40 : -60,
+                    top: isMobile ? 60 : 80,
                     child: Container(
-                      width: 150,
-                      height: 150,
+                      width: isMobile ? 100 : 150,
+                      height: isMobile ? 100 : 150,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: RadialGradient(
@@ -256,11 +272,11 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                   Positioned(
-                    left: -40,
-                    top: 150,
+                    left: isMobile ? -30 : -40,
+                    top: isMobile ? 100 : 150,
                     child: Container(
-                      width: 100,
-                      height: 100,
+                      width: isMobile ? 70 : 100,
+                      height: isMobile ? 70 : 100,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: RadialGradient(
@@ -279,40 +295,40 @@ class _LoginPageState extends State<LoginPage> {
                         const SizedBox(height: 80),
                         // App Icon
                         Container(
-                          width: 70,
-                          height: 70,
+                          width: isMobile ? 60 : 70,
+                          height: isMobile ? 60 : 70,
                           decoration: BoxDecoration(
                             color: Colors.amber,
-                            borderRadius: BorderRadius.circular(18),
+                            borderRadius: BorderRadius.circular(isMobile ? 16 : 18),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.amber.withValues(alpha: 0.3),
-                                blurRadius: 15,
-                                spreadRadius: 3,
+                                blurRadius: isMobile ? 12 : 15,
+                                spreadRadius: isMobile ? 2 : 3,
                               ),
                             ],
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.local_taxi,
-                            size: 35,
+                            size: isMobile ? 30 : 35,
                             color: Colors.white,
                           ),
                         ),
                         const SizedBox(height: 24),
-                        const Text(
+                        Text(
                           'Welcome Back!',
                           style: TextStyle(
-                            fontSize: 36,
+                            fontSize: isMobile ? 28 : 36,
                             fontWeight: FontWeight.w800,
                             color: Colors.white,
                             letterSpacing: -0.5,
                           ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
+                        Text(
                           'Sign in to continue your ride',
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: isMobile ? 14 : 16,
                             color: Colors.white70,
                             fontWeight: FontWeight.w400,
                           ),
@@ -326,26 +342,26 @@ class _LoginPageState extends State<LoginPage> {
 
             // Modern Login Form
             Container(
-              padding: const EdgeInsets.all(24),
+              padding: Responsive.getPadding(context),
               child: Form(
                 key: _formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 32),
-                    const Text(
+                    Text(
                       'Login to your account',
                       style: TextStyle(
-                        fontSize: 24,
+                        fontSize: Responsive.getFontSize(context, 24),
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF1A1A2E),
+                        color: const Color(0xFF1A1A2E),
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
+                    Text(
                       'Enter your credentials to continue',
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: Responsive.getFontSize(context, 14),
                         color: Colors.grey,
                         fontWeight: FontWeight.w400,
                       ),
@@ -353,12 +369,12 @@ class _LoginPageState extends State<LoginPage> {
                     const SizedBox(height: 32),
 
                     // Email Field
-                    const Text(
+                    Text(
                       'Email Address',
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: Responsive.getFontSize(context, 14),
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF1A1A2E),
+                        color: const Color(0xFF1A1A2E),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -391,7 +407,7 @@ class _LoginPageState extends State<LoginPage> {
                           prefixIcon: Icon(
                             Icons.email_outlined,
                             color: Colors.grey.shade600,
-                            size: 20,
+                            size: Responsive.getIconSize(context, 20),
                           ),
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.all(16),

@@ -8,6 +8,7 @@ import 'admin.dart';
 import 'debug_page.dart';
 import 'driver_waiting_page.dart';
 import 'email_verification_page.dart';
+import 'utils/responsive_utils.dart';
 
 // Ultra Professional Google Logo Painter - Pixel Perfect & Authentic
 class GoogleLogoCustomPainter extends CustomPainter {

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Download RideMate</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg:#FAFAFA; --text:#1A1A2E; --muted:#6b7280; --primary:#4C1D95; --accent:#3F3D56; --amber:#FFC107; }
+        * { box-sizing:border-box; }
+        html, body { height:100%; }
+        body {
+            margin:0;
+            font-family: Poppins, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Helvetica Neue", "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            color:var(--text);
+            background:var(--bg);
+        }
+        .page {
+            min-height:85dvh;
+            display:grid;
+            grid-template-columns: 1.1fr 0.9fr;
+            align-items:center;
+            gap: clamp(24px, 6vw, 64px);
+            padding: clamp(20px, 5vw, 56px);
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .left h1 {
+            margin:0 0 12px 0;
+            font-size: clamp(28px, 4vw, 40px);
+            font-weight: 800;
+            letter-spacing: .4px;
+        }
+        .left p {
+            margin:0 0 24px 0;
+            color: var(--muted);
+            line-height:1.6;
+            max-width: 540px;
+        }
+        .cta-row { display:flex; align-items:center; gap:20px; flex-wrap:wrap; }
+        .badges { display:flex; gap:12px; flex-wrap:wrap; }
+        .store-badge {
+            display:inline-flex; align-items:center; gap:10px;
+            padding:10px 12px; border-radius:10px; background:#000; color:#fff; text-decoration:none;
+            box-shadow: 0 2px 6px rgba(0,0,0,.2);
+            transition: transform .15s ease, box-shadow .15s ease;
+        }
+        .store-badge:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(0,0,0,.25); }
+        .store-badge span { display:block; line-height:1; }
+        .small { font-size:10px; opacity:.8; letter-spacing:.3px; }
+        .big { font-size:14px; font-weight:600; }
+        .qr {
+            width: 88px; height: 88px; background:#fff; padding:8px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,.08);
+            display:grid; place-items:center;
+        }
+        .right { width:100%; display:flex; justify-content:center; }
+        .illustration { width:min(600px, 90%); height:auto; }
+        footer { text-align:center; color:#64748b; font-size:12px; margin-top:24px; }
+        .hero {
+            width:100%;
+            background: linear-gradient(135deg, #1A1A2E 0%, #16213E 50%, #4C1D95 100%);
+            display:flex; justify-content:left; align-items:center;
+            padding: 14px 0 10px 0;
+        }
+        @media (max-width: 880px) {
+            .page { grid-template-columns: 1fr; }
+            .right { order:-1; }
+            .left { text-align:center; }
+            .left p { margin-left:auto; margin-right:auto; }
+            .cta-row { justify-content:center; }
+        }
+    </style>
+    <meta name="description" content="Download the app – fast, safe and easy to use." />
+</head>
+<body>
+    <div class="hero">
+        <img src="RideMate logo.png" alt="RideMate Logo" style="height:84px; width:auto; padding-left: 30px; filter: drop-shadow(0 6px 12px rgba(0,0,0,.25));" />
+    </div>
+    <main class="page">
+        <section class="left" aria-label="Download call to action">
+            <h1>DOWNLOAD RIDEMATE</h1>
+            <p style="margin-top:12px; color: var(--muted); max-width: 540px;">
+                RideMate is a reliable ride-sharing app connecting riders with nearby drivers for safe, affordable, and convenient trips.
+            </p>
+            <div class="cta-row">
+                <a href="flutter-apk/app-release.apk" download type="application/vnd.android.package-archive" style="display:inline-flex; align-items:center; gap:10px; padding:12px 18px; border-radius:16px; background:var(--amber); color:var(--text); text-decoration:none; font-weight:700; box-shadow: 0 8px 20px rgba(0,0,0,.12);">
+                    Download App
+                </a>
+            </div>
+            
+        </section>
+
+        <aside class="right" aria-label="Phone preview illustration">
+            <!-- Phone illustration (inline SVG) -->
+            <svg class="illustration" viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Smartphone">
+                <defs>
+                    <linearGradient id="ph" x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0%" stop-color="#2b2dff"/>
+                        <stop offset="100%" stop-color="#2c2f8a"/>
+                    </linearGradient>
+                    <!-- Clip path for the phone screen so an image can be masked with rounded corners -->
+                    <clipPath id="screenClip">
+                        <rect x="190" y="90" width="250" height="470" rx="18" ry="18" />
+                    </clipPath>
+                </defs>
+
+                <!-- subtle background -->
+                <rect x="0" y="0" width="640" height="640" fill="none"/>
+
+                <!-- phone body -->
+                <rect x="175" y="50" width="280" height="550" rx="36" ry="36" fill="#0e0f2e" stroke="#22265a" stroke-width="8"/>
+                <!-- phone screen (image clipped to rounded rectangle). Place your screenshot as rideapp/phone-screen.png -->
+                <g clip-path="url(#screenClip)">
+                    <rect x="190" y="90" width="250" height="470" fill="#000000"/>
+                    <image href="phone-screen.png" x="190" y="90" width="250" height="470" preserveAspectRatio="xMidYMid slice"/>
+                </g>
+                <!-- notch -->
+                <rect x="272" y="70" width="73" height="13" rx="6" ry="6" fill="#0e0f2e"/>
+                <circle cx="308" cy="76" r="4" fill="#3b47ff"/>
+            </svg>
+        </aside>
+    </main>
+</body>
+</html>

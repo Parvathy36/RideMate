@@ -19,6 +19,9 @@ import 'driver_waiting_page.dart';
 import 'driver_dashboard.dart';
 import 'debug_page.dart';
 import 'email_verification_page.dart';
+import 'utils/responsive_utils.dart';
+
+import 'services/tflite_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +31,9 @@ void main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
     print('✅ Firebase initialized successfully in main()');
+
+    // Initialize TFLite Service
+    await TFLiteService().initialize();
 
     // Run Firebase connection test
     await FirebaseTest.testFirebaseConnection();
@@ -241,10 +247,13 @@ class _LandingPageState extends State<LandingPage>
         automaticallyImplyLeading: false,
         title: LayoutBuilder(
           builder: (context, constraints) {
-            final screenWidth = MediaQuery.of(context).size.width;
+            final isDesktop = Responsive.isDesktop(context);
+            final isTablet = Responsive.isTablet(context);
+            final fontSize = Responsive.getFontSize(context, isDesktop ? 24 : 20);
+            final spacing = Responsive.getSpacing(context, 16);
 
-            // Desktop/Large Tablet Layout (>800px)
-            if (screenWidth > 800) {
+            // Desktop/Large Tablet Layout
+            if (isDesktop || isTablet) {
               return Row(
                 children: [
                   // RideMate Logo
@@ -252,12 +261,12 @@ class _LandingPageState extends State<LandingPage>
                     'RideMate',
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
-                      fontSize: screenWidth > 1200 ? 24 : 20,
+                      fontSize: fontSize,
                       letterSpacing: -0.5,
                       color: Colors.white,
                     ),
                   ),
-                  SizedBox(width: screenWidth > 1200 ? 60 : 30),
+                  SizedBox(width: spacing * (isDesktop ? 3.75 : 1.875)),
                   // Desktop Navigation Menu
                   Flexible(
                     child: SingleChildScrollView(
@@ -266,7 +275,7 @@ class _LandingPageState extends State<LandingPage>
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           _buildNavButton('Home', true, () {}),
-                          SizedBox(width: screenWidth > 1200 ? 32 : 16),
+                          SizedBox(width: spacing * (isDesktop ? 2 : 1)),
                           _buildNavButton('About', false, () {
                             Navigator.push(
                               context,
@@ -275,7 +284,7 @@ class _LandingPageState extends State<LandingPage>
                               ),
                             );
                           }),
-                          SizedBox(width: screenWidth > 1200 ? 32 : 16),
+                          SizedBox(width: spacing * (isDesktop ? 2 : 1)),
                           _buildNavButton('Service', false, () {
                             Navigator.push(
                               context,
@@ -284,7 +293,7 @@ class _LandingPageState extends State<LandingPage>
                               ),
                             );
                           }),
-                          SizedBox(width: screenWidth > 1200 ? 32 : 16),
+                          SizedBox(width: spacing * (isDesktop ? 2 : 1)),
                           _buildNavButton('Contact', false, () {
                             Navigator.push(
                               context,
@@ -300,17 +309,17 @@ class _LandingPageState extends State<LandingPage>
                 ],
               );
             }
-            // Mobile/Tablet Layout (≤800px)
+            // Mobile Layout
             else {
               return Row(
                 children: [
                   // Professional Hamburger Menu
                   Container(
-                    margin: EdgeInsets.only(right: screenWidth < 400 ? 8 : 16),
+                    margin: EdgeInsets.only(right: spacing * 0.5),
                     child: PopupMenuButton<String>(
                       offset: const Offset(0, 50),
                       icon: Container(
-                        padding: EdgeInsets.all(screenWidth < 600 ? 6 : 8),
+                        padding: EdgeInsets.all(Responsive.getSpacing(context, 8)),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -322,7 +331,7 @@ class _LandingPageState extends State<LandingPage>
                         child: Icon(
                           Icons.menu,
                           color: Colors.white,
-                          size: screenWidth < 600 ? 18 : 20,
+                          size: Responsive.getIconSize(context, 20),
                         ),
                       ),
                       onSelected: (value) {
@@ -357,7 +366,7 @@ class _LandingPageState extends State<LandingPage>
                         }
                       },
                       itemBuilder: (context) =>
-                          _buildResponsiveMenuItems(screenWidth, 'home'),
+                          _buildResponsiveMenuItems(context, 'home'),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
@@ -372,9 +381,7 @@ class _LandingPageState extends State<LandingPage>
                       'RideMate',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        fontSize: screenWidth < 400
-                            ? 18
-                            : (screenWidth < 600 ? 20 : 24),
+                        fontSize: Responsive.getFontSize(context, 24),
                         letterSpacing: -0.5,
                         color: Colors.white,
                       ),
@@ -388,6 +395,7 @@ class _LandingPageState extends State<LandingPage>
           },
         ),
         actions: _buildResponsiveActions(context),
+        toolbarHeight: Responsive.getAppBarHeight(context),
       ),
       body: SingleChildScrollView(
         child: Column(
@@ -933,12 +941,12 @@ class _LandingPageState extends State<LandingPage>
 
   // Helper method for responsive menu items
   List<PopupMenuEntry<String>> _buildResponsiveMenuItems(
-    double screenWidth,
+    BuildContext context,
     String currentPage,
   ) {
-    final double iconSize = screenWidth < 600 ? 16 : 18;
-    final double fontSize = screenWidth < 600 ? 14 : 15;
-    final double verticalPadding = screenWidth < 600 ? 6 : 8;
+    final iconSize = Responsive.getIconSize(context, 18);
+    final fontSize = Responsive.getFontSize(context, 15);
+    final verticalPadding = Responsive.getSpacing(context, 8);
 
     return [
       PopupMenuItem(
@@ -1054,27 +1062,15 @@ class _LandingPageState extends State<LandingPage>
 
   // Helper method for responsive action buttons
   List<Widget> _buildResponsiveActions(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-
-    // Responsive sizing for all screen sizes
-    final double horizontalPadding = screenWidth < 400
-        ? 8
-        : (screenWidth < 600 ? 12 : 20);
-    final double verticalPadding = screenWidth < 400
-        ? 6
-        : (screenWidth < 600 ? 8 : 10);
-    final double fontSize = screenWidth < 400
-        ? 11
-        : (screenWidth < 600 ? 12 : 14);
-    final double rightMargin = screenWidth < 400
-        ? 2
-        : (screenWidth < 600 ? 4 : 8);
-    final double finalMargin = screenWidth < 400
-        ? 4
-        : (screenWidth < 600 ? 8 : 16);
+    final isMobileSmall = Responsive.getScreenSize(context) == ScreenSize.mobileSmall;
+    final horizontalPadding = Responsive.getSpacing(context, 20);
+    final verticalPadding = Responsive.getSpacing(context, 10);
+    final fontSize = Responsive.getFontSize(context, 14);
+    final rightMargin = Responsive.getSpacing(context, 8);
+    final finalMargin = Responsive.getSpacing(context, 16);
 
     // For very small screens, show only Login button
-    if (screenWidth < 350) {
+    if (isMobileSmall) {
       return [
         Container(
           margin: EdgeInsets.only(right: finalMargin),
@@ -1089,8 +1085,8 @@ class _LandingPageState extends State<LandingPage>
               backgroundColor: Colors.amber,
               foregroundColor: const Color(0xFF1A1A2E),
               padding: EdgeInsets.symmetric(
-                horizontal: horizontalPadding,
-                vertical: verticalPadding,
+                horizontal: horizontalPadding * 0.4,
+                vertical: verticalPadding * 0.6,
               ),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(25),
@@ -1100,7 +1096,7 @@ class _LandingPageState extends State<LandingPage>
             ),
             child: Text(
               'Login',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: fontSize),
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: fontSize * 0.8),
             ),
           ),
         ),
@@ -1120,17 +1116,17 @@ class _LandingPageState extends State<LandingPage>
           },
           style: TextButton.styleFrom(
             padding: EdgeInsets.symmetric(
-              horizontal: horizontalPadding,
-              vertical: verticalPadding,
+              horizontal: horizontalPadding * 0.6,
+              vertical: verticalPadding * 0.8,
             ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(25),
             ),
             backgroundColor: Colors.white.withValues(alpha: 0.15),
-            minimumSize: Size(screenWidth < 400 ? 50 : 70, 32),
+            minimumSize: Size(70, 32),
           ),
           child: Text(
-            screenWidth < 400 ? 'Sign' : 'Sign Up',
+            'Sign Up',
             style: TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w600,
@@ -1159,7 +1155,7 @@ class _LandingPageState extends State<LandingPage>
               borderRadius: BorderRadius.circular(25),
             ),
             elevation: 0,
-            minimumSize: Size(screenWidth < 400 ? 50 : 70, 32),
+            minimumSize: Size(80, 32),
           ),
           child: Text(
             'Login',

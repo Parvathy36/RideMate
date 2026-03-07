@@ -1,0 +1,11 @@
+ride_booking_help
+ride_pooling_explanation
+ride_status_check
+payment_failed
+refund_status
+payment_methods
+ride_issues
+driver_behavior
+app_problems
+account_issues
+general_help

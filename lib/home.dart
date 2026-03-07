@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'services/auth_service.dart';
 import 'map_screen.dart';
 import 'services/firestore_service.dart';
+import 'services/ride_cancellation_service.dart';
+import 'services/notification_service.dart' as notification_service;
 import 'package:flutter/foundation.dart';
 // Removed google_place to avoid http version conflict
 import 'user_profile_page.dart';
 import 'ride_history_page.dart';
 import 'rides_booking.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
+import "screens/chatbot_screen.dart";
+import 'utils/responsive_utils.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -76,96 +80,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  // Show payment dialog that cannot be closed until payment is successful
-  Future<void> _showPaymentDialog(Map<String, dynamic> ride) async {
-    final rideId = ride['id'] as String;
-    final fare = ride['fare'] as num? ?? 0;
-    final pickup = ride['pickupAddress'] as String? ?? 'Unknown pickup';
-    final destination =
-        ride['destinationAddress'] as String? ?? 'Unknown destination';
-    final driver = ride['driver'] as Map<String, dynamic>? ?? {};
-    final rideType = ride['rideType'] as String? ?? 'Solo';
-
-    await showDialog(
-      context: context,
-      barrierDismissible: false, // Prevent dismissing by tapping outside
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF1A1A2E),
-          title: const Text(
-            'Ride Booking Payment',
-            style: TextStyle(color: Colors.white),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Your ride has been accepted!',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Pickup: $pickup',
-                  style: const TextStyle(color: Colors.white70),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Destination: $destination',
-                  style: const TextStyle(color: Colors.white70),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Total Fare: ₹${fare.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  'Please complete the payment to confirm your ride.',
-                  style: TextStyle(color: Colors.white70),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            ElevatedButton(
-              onPressed: () {
-                // Close the dialog
-                Navigator.of(context).pop();
-
-                // Navigate to rides booking page
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => RidesBookingPage(
-                      rideId: rideId,
-                      driverDetails: driver,
-                      pickupAddress: pickup,
-                      destinationAddress: destination,
-                      fare: fare.toDouble(),
-                      rideType: rideType,
-                    ),
-                  ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.deepPurple,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Pay Now'),
-            ),
-          ],
-        );
-      },
-    );
-  }
+  // Payment dialog removed - booking confirmation happens automatically
 
   // Open Razorpay checkout
   void _openCheckout(String rideId, double amount) {
@@ -266,14 +181,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         final rideId = ride['id'] as String;
 
         if (status == 'accepted') {
-          // Show payment dialog for accepted rides
-          if (mounted) {
-            _showPaymentDialog(ride);
-          }
+          // Booking is automatically confirmed - no payment dialog
+          print('Ride accepted: $rideId');
         } else if (status == 'rejected') {
           // Show rejection message for rejected rides
           if (mounted) {
             _showRejectionMessage(ride);
+          }
+        } else if (status == 'cancelled') {
+          // Show cancellation message for cancelled rides
+          if (mounted) {
+            _showCancellationMessage(ride);
           }
         }
       }
@@ -290,6 +208,36 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Your ride request was rejected: $rejectionReason'),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 5),
+      ),
+    );
+  }
+
+  // Show cancellation message for cancelled rides
+  void _showCancellationMessage(Map<String, dynamic> ride) {
+    final cancellationReason =
+        ride['cancellationReason'] as String? ??
+        'Driver did not respond within 5 minutes';
+    final pickupAddress = ride['pickupAddress'] as String? ?? 'Unknown';
+    final destinationAddress =
+        ride['destinationAddress'] as String? ?? 'Unknown';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Your ride has been cancelled.',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text('Pickup: $pickupAddress'),
+            Text('Destination: $destinationAddress'),
+          ],
+        ),
         backgroundColor: Colors.red,
         duration: const Duration(seconds: 5),
       ),
@@ -611,10 +559,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
         title: LayoutBuilder(
           builder: (context, constraints) {
-            final screenWidth = MediaQuery.of(context).size.width;
+            // Use responsive utilities
+            final isDesktop = Responsive.isDesktop(context);
+            final isTablet = Responsive.isTablet(context);
+            final fontSize = Responsive.getFontSize(context, isDesktop ? 24 : 20);
+            final spacing = Responsive.getSpacing(context, 16);
 
-            // Desktop/Large Tablet Layout (>800px)
-            if (screenWidth > 800) {
+            // Desktop/Large Tablet Layout
+            if (isDesktop || isTablet) {
               return Row(
                 children: [
                   // RideMate Logo
@@ -622,12 +574,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     'RideMate',
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
-                      fontSize: screenWidth > 1200 ? 24 : 20,
+                      fontSize: fontSize,
                       letterSpacing: -0.5,
                       color: Colors.white,
                     ),
                   ),
-                  SizedBox(width: screenWidth > 1200 ? 60 : 30),
+                  SizedBox(width: spacing * (isDesktop ? 3.75 : 1.875)),
                   // Desktop Navigation Menu
                   Flexible(
                     child: SingleChildScrollView(
@@ -636,6 +588,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           _buildNavButton('Home', true, () {}),
+                          SizedBox(width: spacing),
                           _buildNavButton('Ride History', false, () {
                             Navigator.push(
                               context,
@@ -651,17 +604,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ],
               );
             }
-            // Mobile/Tablet Layout (≤800px)
+            // Mobile Layout
             else {
               return Row(
                 children: [
                   // Professional Hamburger Menu
                   Container(
-                    margin: EdgeInsets.only(right: screenWidth < 400 ? 8 : 16),
+                    margin: EdgeInsets.only(right: spacing * 0.5),
                     child: PopupMenuButton<String>(
                       offset: const Offset(0, 50),
                       icon: Container(
-                        padding: EdgeInsets.all(screenWidth < 600 ? 6 : 8),
+                        padding: EdgeInsets.all(Responsive.getSpacing(context, 8)),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -673,7 +626,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         child: Icon(
                           Icons.menu,
                           color: Colors.white,
-                          size: screenWidth < 600 ? 18 : 20,
+                          size: Responsive.getIconSize(context, 20),
                         ),
                       ),
                       onSelected: (value) {
@@ -692,7 +645,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         }
                       },
                       itemBuilder: (context) =>
-                          _buildResponsiveMenuItems(screenWidth, 'home'),
+                          _buildResponsiveMenuItems(context, 'home'),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
@@ -707,9 +660,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       'RideMate',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        fontSize: screenWidth < 400
-                            ? 18
-                            : (screenWidth < 600 ? 20 : 24),
+                        fontSize: Responsive.getFontSize(context, 24),
                         letterSpacing: -0.5,
                         color: Colors.white,
                       ),
@@ -723,6 +674,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           },
         ),
         actions: _buildResponsiveActions(context),
+        toolbarHeight: Responsive.getAppBarHeight(context),
       ),
       body: SingleChildScrollView(
         child: Column(
@@ -1124,6 +1076,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                           return;
                                         }
                                         // rideId is non-null here; navigation proceeds
+                                        // Schedule auto-cancellation for the ride
+                                        RideCancellationService.scheduleRideCancellation(
+                                          rideId!,
+                                        );
                                         Navigator.of(context).push(
                                           MaterialPageRoute(
                                             builder: (_) =>
@@ -1396,12 +1352,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   // Helper method for responsive menu items
   List<PopupMenuEntry<String>> _buildResponsiveMenuItems(
-    double screenWidth,
+    BuildContext context,
     String currentPage,
   ) {
-    final double iconSize = screenWidth < 600 ? 16 : 18;
-    final double fontSize = screenWidth < 600 ? 14 : 15;
-    final double verticalPadding = screenWidth < 600 ? 6 : 8;
+    final iconSize = Responsive.getIconSize(context, 18);
+    final fontSize = Responsive.getFontSize(context, 15);
+    final verticalPadding = Responsive.getSpacing(context, 8);
 
     return [
       PopupMenuItem(
@@ -1532,27 +1488,88 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   // Helper method for responsive action buttons (Profile and Logout)
   List<Widget> _buildResponsiveActions(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
     final user = _authService.currentUser;
-
-    // Responsive sizing for all screen sizes
-    final double horizontalPadding = screenWidth < 400
-        ? 8
-        : (screenWidth < 600 ? 12 : 20);
-    final double verticalPadding = screenWidth < 400
-        ? 6
-        : (screenWidth < 600 ? 8 : 10);
-    final double fontSize = screenWidth < 400
-        ? 11
-        : (screenWidth < 600 ? 12 : 14);
-    final double rightMargin = screenWidth < 400
-        ? 2
-        : (screenWidth < 600 ? 4 : 8);
-    final double finalMargin = screenWidth < 400
-        ? 4
-        : (screenWidth < 600 ? 8 : 16);
+    final horizontalPadding = Responsive.getSpacing(context, 20);
+    final verticalPadding = Responsive.getSpacing(context, 10);
+    final fontSize = Responsive.getFontSize(context, 14);
+    final rightMargin = Responsive.getSpacing(context, 8);
+    final finalMargin = Responsive.getSpacing(context, 16);
+    final iconSize = Responsive.getIconSize(context, 18);
 
     return [
+      // Chatbot button
+      Container(
+        margin: EdgeInsets.only(right: rightMargin),
+        child: TextButton.icon(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ChatbotScreen()),
+            );
+          },
+          icon: Icon(
+            Icons.support_agent,
+            color: Colors.white,
+            size: iconSize,
+          ),
+          label: Responsive.isMobile(context)
+              ? const SizedBox.shrink()
+              : Text(
+                  Responsive.getScreenSize(context) == ScreenSize.mobileSmall ? 'Help' : 'Support',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: fontSize,
+                  ),
+                ),
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding * 0.6,
+              vertical: verticalPadding * 0.8,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(25),
+            ),
+            backgroundColor: Colors.white.withValues(alpha: 0.15),
+            minimumSize: Size(70, 32),
+          ),
+        ),
+      ),
+      // Notifications button
+      Container(
+        margin: EdgeInsets.only(right: rightMargin),
+        child: TextButton.icon(
+          onPressed: () {
+            _showNotificationPanel(context);
+          },
+          icon: Icon(
+            Icons.notifications,
+            color: Colors.white,
+            size: iconSize,
+          ),
+          label: Responsive.isMobile(context)
+              ? const SizedBox.shrink()
+              : Text(
+                  Responsive.getScreenSize(context) == ScreenSize.mobileSmall ? 'Notif' : 'Notifications',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: fontSize,
+                  ),
+                ),
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding * 0.6,
+              vertical: verticalPadding * 0.8,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(25),
+            ),
+            backgroundColor: Colors.white.withValues(alpha: 0.15),
+            minimumSize: Size(70, 32),
+          ),
+        ),
+      ),
       // Profile button
       Container(
         margin: EdgeInsets.only(right: rightMargin),
@@ -1567,12 +1584,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           icon: Icon(
             Icons.person,
             color: Colors.white,
-            size: screenWidth < 400 ? 16 : 18,
+            size: iconSize,
           ),
-          label: screenWidth < 350
+          label: Responsive.isMobile(context)
               ? const SizedBox.shrink()
               : Text(
-                  screenWidth < 400 ? 'Profile' : 'Profile',
+                  Responsive.getScreenSize(context) == ScreenSize.mobileSmall ? 'Profile' : 'Profile',
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
@@ -1581,14 +1598,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ),
           style: TextButton.styleFrom(
             padding: EdgeInsets.symmetric(
-              horizontal: horizontalPadding,
-              vertical: verticalPadding,
+              horizontal: horizontalPadding * 0.6,
+              vertical: verticalPadding * 0.8,
             ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(25),
             ),
             backgroundColor: Colors.white.withValues(alpha: 0.15),
-            minimumSize: Size(screenWidth < 400 ? 40 : 70, 32),
+            minimumSize: Size(70, 32),
           ),
         ),
       ),
@@ -1608,7 +1625,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               borderRadius: BorderRadius.circular(25),
             ),
             elevation: 0,
-            minimumSize: Size(screenWidth < 400 ? 50 : 70, 32),
+            minimumSize: Size(70, 32),
           ),
           child: Text(
             'Logout',
@@ -1617,6 +1634,161 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
       ),
     ];
+  }
+
+  // Show notification panel
+  void _showNotificationPanel(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return NotificationPanel();
+      },
+    );
+  }
+}
+
+class NotificationPanel extends StatefulWidget {
+  @override
+  _NotificationPanelState createState() => _NotificationPanelState();
+}
+
+class _NotificationPanelState extends State<NotificationPanel> {
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF1A1A2E),
+      title: Row(
+        children: [
+          const Text('Notifications', style: TextStyle(color: Colors.white)),
+          const Spacer(),
+          IconButton(
+            icon: const Icon(Icons.close, color: Colors.white),
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+          ),
+        ],
+      ),
+      content: Container(
+        width: MediaQuery.of(context).size.width * 0.8,
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: StreamBuilder<List<notification_service.Notification>>(
+          stream:
+              notification_service.NotificationService.getUserNotifications(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: CircularProgressIndicator(color: Colors.deepPurple),
+              );
+            }
+
+            if (snapshot.hasError) {
+              return const Center(
+                child: Text(
+                  'Error loading notifications',
+                  style: TextStyle(color: Colors.white),
+                ),
+              );
+            }
+
+            final notifications = snapshot.data ?? [];
+
+            if (notifications.isEmpty) {
+              return const Center(
+                child: Text(
+                  'No notifications available',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              );
+            }
+
+            return ListView.builder(
+              itemCount: notifications.length,
+              itemBuilder: (context, index) {
+                final notification = notifications[index];
+                return _buildNotificationItem(notification);
+              },
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            notification_service.NotificationService.markAllAsRead();
+            Navigator.of(context).pop();
+          },
+          child: const Text(
+            'Mark All as Read',
+            style: TextStyle(color: Colors.deepPurple),
+          ),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+          child: const Text('Close', style: TextStyle(color: Colors.white70)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNotificationItem(
+    notification_service.Notification notification,
+  ) {
+    final timeString = _formatTime(notification.timestamp);
+    final isRead = notification.isRead;
+
+    return Card(
+      color: isRead ? Colors.grey.shade800 : Colors.grey.shade700,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16.0,
+          vertical: 8.0,
+        ),
+        leading: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: isRead ? Colors.grey.shade600 : Colors.deepPurple,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(Icons.notifications, color: Colors.white, size: 16),
+        ),
+        title: Text(
+          notification.message,
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
+          ),
+        ),
+        subtitle: Text(
+          timeString,
+          style: TextStyle(
+            color: isRead ? Colors.grey.shade400 : Colors.grey.shade300,
+          ),
+        ),
+        onTap: () {
+          notification_service.NotificationService.markAsRead(notification.id);
+          setState(() {}); // Update UI to reflect read status
+        },
+      ),
+    );
+  }
+
+  String _formatTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inDays > 0) {
+      return '${difference.inDays}d ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}m ago';
+    } else {
+      return 'Just now';
+    }
   }
 }
 

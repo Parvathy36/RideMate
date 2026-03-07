@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/firestore_service.dart';
+import 'services/driver_assignment_service.dart';
+import 'screens/live_driver_location_screen.dart';
 
 class RidesBookingPage extends StatefulWidget {
   final String rideId;
@@ -338,22 +341,52 @@ class _RidesBookingPageState extends State<RidesBookingPage> {
 
   Future<void> _finalizeBooking() async {
     try {
-      await FirestoreService.updateRideStatus(widget.rideId, 'confirmed');
+      // Get ride data to get pickup location
+      final rideData = await FirestoreService.getRideById(widget.rideId);
+      if (rideData == null) {
+        throw Exception('Ride not found');
+      }
+
+      final pickupLocation = rideData['pickupLocation'] as GeoPoint?;
+      if (pickupLocation == null) {
+        throw Exception('Pickup location not found');
+      }
+
+      // Assign closest driver automatically
+      final assignmentResult = await DriverAssignmentService.assignClosestDriver(
+        rideId: widget.rideId,
+        pickupLat: pickupLocation.latitude,
+        pickupLng: pickupLocation.longitude,
+      );
+
+      if (assignmentResult == null) {
+        throw Exception('No available drivers found. Please try again later.');
+      }
+
       if (!mounted) {
         return;
       }
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Booking confirmed successfully!'),
+        SnackBar(
+          content: Text(
+            'Driver assigned! ${assignmentResult['driver']['name']} will arrive soon.',
+          ),
           backgroundColor: Colors.green,
         ),
       );
-      Navigator.of(context).popUntil((route) => route.isFirst);
+
+      // Navigate to live tracking map to show driver assignment
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (context) => LiveDriverLocationScreen(rideId: widget.rideId),
+        ),
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error confirming booking: $e'),
+            content: Text('Error assigning driver: $e'),
             backgroundColor: Colors.red,
           ),
         );
