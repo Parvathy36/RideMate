@@ -9,6 +9,7 @@ import 'driver_waiting_page.dart';
 import 'driver_dashboard.dart';
 import 'email_verification_page.dart';
 import 'screens/support_dashboard.dart';
+import 'screens/supervisor_dashboard.dart';
 import 'utils/responsive_utils.dart';
 
 class LoginPage extends StatefulWidget {
@@ -64,6 +65,13 @@ class _LoginPageState extends State<LoginPage> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => const SupportDashboard()),
+          );
+          break;
+        case 'supervisor':
+          print('🔄 Navigating to Supervisor Dashboard...');
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const SupervisorDashboard()),
           );
           break;
         case 'driver':

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'services/auth_service.dart';
 import 'map_screen.dart';
 import 'services/firestore_service.dart';
@@ -1739,39 +1740,127 @@ class _NotificationPanelState extends State<NotificationPanel> {
     final timeString = _formatTime(notification.timestamp);
     final isRead = notification.isRead;
 
+    final otpMatch = RegExp(r'OTP: (\d{4})').firstMatch(notification.message);
+    final otp = otpMatch?.group(1);
+
     return Card(
       color: isRead ? Colors.grey.shade800 : Colors.grey.shade700,
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16.0,
-          vertical: 8.0,
-        ),
-        leading: Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: isRead ? Colors.grey.shade600 : Colors.deepPurple,
-            shape: BoxShape.circle,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: isRead ? 0 : 4,
+      child: Column(
+        children: [
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 8.0,
+            ),
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isRead ? Colors.grey.shade600 : Colors.deepPurple,
+                shape: BoxShape.circle,
+                boxShadow: isRead 
+                  ? [] 
+                  : [BoxShadow(color: Colors.deepPurple.withOpacity(0.3), blurRadius: 8, spreadRadius: 2)],
+              ),
+              child: Icon(
+                notification.type?.contains('ride') == true ? Icons.directions_car : Icons.notifications, 
+                color: Colors.white, 
+                size: 20
+              ),
+            ),
+            title: Text(
+              notification.message,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
+                fontSize: 15,
+              ),
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                timeString,
+                style: TextStyle(
+                  color: isRead ? Colors.grey.shade400 : Colors.grey.shade300,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            onTap: () {
+              notification_service.NotificationService.markAsRead(notification.id);
+              if (mounted) setState(() {});
+            },
           ),
-          child: Icon(Icons.notifications, color: Colors.white, size: 16),
-        ),
-        title: Text(
-          notification.message,
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
-          ),
-        ),
-        subtitle: Text(
-          timeString,
-          style: TextStyle(
-            color: isRead ? Colors.grey.shade400 : Colors.grey.shade300,
-          ),
-        ),
-        onTap: () {
-          notification_service.NotificationService.markAsRead(notification.id);
-          setState(() {}); // Update UI to reflect read status
-        },
+          if (otp != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.deepPurple.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.vpn_key, color: Colors.amber, size: 18),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Ride OTP:',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          otp,
+                          style: const TextStyle(
+                            color: Colors.amber,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                            letterSpacing: 2,
+                          ),
+                        ),
+                      ],
+                    ),
+                    TextButton.icon(
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: otp));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('OTP $otp copied to clipboard'),
+                            behavior: SnackBarBehavior.floating,
+                            width: 250,
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.copy, size: 16, color: Colors.deepPurpleAccent),
+                      label: const Text(
+                        'COPY',
+                        style: TextStyle(
+                          color: Colors.deepPurpleAccent,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        backgroundColor: Colors.deepPurple.withOpacity(0.1),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

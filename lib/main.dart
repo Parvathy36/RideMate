@@ -20,6 +20,7 @@ import 'driver_dashboard.dart';
 import 'debug_page.dart';
 import 'email_verification_page.dart';
 import 'utils/responsive_utils.dart';
+import 'screens/supervisor_dashboard.dart';
 
 import 'services/tflite_service.dart';
 
@@ -157,6 +158,9 @@ class AuthWrapper extends StatelessWidget {
                 if (userType == 'admin') {
                   print('➡️ Routing to AdminPage');
                   return const AdminPage();
+                } else if (userType == 'supervisor') {
+                  print('➡️ Routing to SupervisorDashboard');
+                  return const SupervisorDashboard();
                 } else if (userType == 'driver') {
                   // Check if driver is approved
                   final isApproved = userData['isApproved'] ?? false;

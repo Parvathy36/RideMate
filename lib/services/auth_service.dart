@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/foundation.dart';
 import 'firestore_service.dart';
@@ -216,14 +217,12 @@ class AuthService {
           print('Email verification sent to: $email');
         } catch (e) {
           print('Failed to send email verification: $e');
-          // Don't throw error as registration should still proceed
         }
       }
 
       // Create user document in Firestore
       try {
         if (isDriver) {
-          // For driver registration, validate license and create comprehensive driver document
           if (licenseId == null || licenseId.isEmpty) {
             throw Exception('License ID is required for driver registration');
           }
@@ -234,7 +233,6 @@ class AuthService {
             throw Exception('Phone number is required for driver registration');
           }
 
-          // Validate license in database
           final licenseData = await LicenseValidationService.validateLicense(
             licenseId,
           );
@@ -244,7 +242,6 @@ class AuthService {
             );
           }
 
-          // Check if license is already registered by another driver
           final isLicenseRegistered =
               await FirestoreService.isLicenseAlreadyRegistered(licenseId);
           if (isLicenseRegistered) {
@@ -253,7 +250,6 @@ class AuthService {
             );
           }
 
-          // Create comprehensive driver document
           await FirestoreService.createDriverDocument(
             userId: result.user!.uid,
             name: name,
@@ -261,12 +257,11 @@ class AuthService {
             phoneNumber: phoneNumber,
             licenseId: licenseId,
             carModel: carModel,
-            carNumber: carNumber ?? '', // Default empty if not provided
+            carNumber: carNumber ?? '',
             licenseData: licenseData,
           );
           print('Driver document created in Firestore');
         } else {
-          // For regular user registration, create simple user document
           Map<String, dynamic> userData = {
             'name': name,
             'email': email,
@@ -274,7 +269,6 @@ class AuthService {
             'userType': 'user',
           };
 
-          // Add phone number if provided
           if (phoneNumber != null && phoneNumber.isNotEmpty) {
             userData['phoneNumber'] = phoneNumber;
           }
@@ -295,11 +289,9 @@ class AuthService {
         }
       } catch (firestoreError) {
         print('Firestore error: $firestoreError');
-        // For driver registration, this is critical - throw the error
         if (isDriver) {
           throw Exception('Driver registration failed: $firestoreError');
         }
-        // For regular users, it's non-critical
       }
 
       return result;
@@ -309,6 +301,55 @@ class AuthService {
     } catch (e) {
       print('General exception during registration: $e');
       throw Exception('Registration failed: $e');
+    }
+  }
+
+  // Register with email and password using a secondary Firebase App instance
+  // This is used by admins to add new members without being logged out
+  Future<UserCredential?> registerSecondaryUser(
+    String email,
+    String password,
+    String name,
+  ) async {
+    FirebaseApp? secondaryApp;
+    try {
+      print('Starting secondary registration for email: $email');
+
+      // Initialize secondary app
+      secondaryApp = await Firebase.initializeApp(
+        name: 'SecondaryApp',
+        options: Firebase.app().options,
+      );
+
+      // Create user using secondary app's auth instance
+      UserCredential result = await FirebaseAuth.instanceFor(app: secondaryApp)
+          .createUserWithEmailAndPassword(email: email, password: password)
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw Exception(
+                'Secondary registration timed out. Please check your internet connection.',
+              );
+            },
+          );
+
+      print('Secondary user created successfully: ${result.user?.uid}');
+
+      // Update display name for the new user
+      await result.user?.updateDisplayName(name);
+
+      return result;
+    } on FirebaseAuthException catch (e) {
+      print('Secondary FirebaseAuthException: ${e.code} - ${e.message}');
+      throw _handleAuthException(e);
+    } catch (e) {
+      print('General exception during secondary registration: $e');
+      throw Exception('Secondary registration failed: $e');
+    } finally {
+      // Always delete secondary app to free resources and avoid name conflicts
+      if (secondaryApp != null) {
+        await secondaryApp.delete();
+      }
     }
   }
 

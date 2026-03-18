@@ -48,6 +48,7 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
     'Drivers',
     'Rides',
     'Support Team',
+    'Supervisors',
     'Analytics',
     'Settings',
   ];
@@ -333,8 +334,12 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
       case 3:
         return Icons.directions_car;
       case 4:
-        return Icons.analytics;
+        return Icons.support_agent;
       case 5:
+        return Icons.supervisor_account;
+      case 6:
+        return Icons.analytics;
+      case 7:
         return Icons.settings;
       default:
         return Icons.circle;
@@ -485,8 +490,12 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
       case 3:
         return 'View and manage rides';
       case 4:
-        return 'Application analytics and reports';
+        return 'Manage support team members';
       case 5:
+        return 'Manage regional supervisors';
+      case 6:
+        return 'Application analytics and reports';
+      case 7:
         return 'Application settings';
       default:
         return '';
@@ -507,8 +516,10 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
       case 4:
         return _buildSupportTeamContent();
       case 5:
-        return _buildAnalyticsContent();
+        return _buildSupervisorsContent();
       case 6:
+        return _buildAnalyticsContent();
+      case 7:
         return _buildSettingsContent();
       default:
         return _buildDashboardContent();
@@ -1569,6 +1580,508 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
         );
       },
     );
+  }
+
+  // ----- SUPERVISORS CONTENT -----
+
+  // Build the Supervisors content area
+  Widget _buildSupervisorsContent() {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildCreateSupervisorCard(),
+          const SizedBox(height: 24),
+          _buildSupervisorList(),
+        ],
+      ),
+    );
+  }
+
+  // Build create supervisor card
+  Widget _buildCreateSupervisorCard() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.deepPurple, Colors.deepPurple.shade700],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.supervisor_account,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 16),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Create Regional Supervisor',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1A1A2E),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Add new supervisor and assign them a region',
+                      style: TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          _buildCreateSupervisorForm(),
+        ],
+      ),
+    );
+  }
+
+  // Build create supervisor form
+  Widget _buildCreateSupervisorForm() {
+    final _formKey = GlobalKey<FormState>();
+    final _nameController = TextEditingController();
+    final _emailController = TextEditingController();
+    final _phoneController = TextEditingController();
+    final _passwordController = TextEditingController();
+    String _selectedRegion = 'North';
+    final List<String> _regions = ['North', 'South', 'East', 'West', 'Central'];
+    bool _isLoading = false;
+
+    return StatefulBuilder(
+      builder: (context, setState) {
+        return Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Name Field
+              const Text('Full Name', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E))),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _nameController,
+                decoration: InputDecoration(
+                  hintText: 'Enter full name',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.deepPurple, width: 2)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                ),
+                validator: _validateFullName,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+              ),
+              const SizedBox(height: 16),
+
+              // Email Field
+              const Text('Email Address', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E))),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+                decoration: InputDecoration(
+                  hintText: 'Enter email address',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.deepPurple, width: 2)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                ),
+                validator: _validateEmail,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+              ),
+              const SizedBox(height: 16),
+
+              // Region Dropdown and Phone Row
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Phone Number', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E))),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _phoneController,
+                          keyboardType: TextInputType.phone,
+                          decoration: InputDecoration(
+                            hintText: 'e.g., +919562829536',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.deepPurple, width: 2)),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          ),
+                          validator: _validatePhoneNumber,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Region', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E))),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          value: _selectedRegion,
+                          decoration: InputDecoration(
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.deepPurple, width: 2)),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          ),
+                          items: _regions.map((region) => DropdownMenuItem(value: region, child: Text(region))).toList(),
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedRegion = value!;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Password Field
+              const Text('Password', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E))),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _passwordController,
+                obscureText: true,
+                decoration: InputDecoration(
+                  hintText: 'Enter password',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.deepPurple, width: 2)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                ),
+                validator: _validatePassword,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+              ),
+              const SizedBox(height: 24),
+
+              // Create Button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isLoading
+                      ? null
+                      : () async {
+                          if (_formKey.currentState!.validate()) {
+                            setState(() {
+                              _isLoading = true;
+                            });
+
+                            try {
+                              await _createSupervisor(
+                                name: _nameController.text.trim(),
+                                email: _emailController.text.trim(),
+                                phone: _phoneController.text.trim(),
+                                password: _passwordController.text,
+                                region: _selectedRegion,
+                              );
+
+                              // Clear form
+                              _nameController.clear();
+                              _emailController.clear();
+                              _phoneController.clear();
+                              _passwordController.clear();
+                              setState(() {
+                                 _selectedRegion = _regions[0];
+                              });
+
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Supervisor created successfully!'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Error: $e'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            } finally {
+                              if (mounted) {
+                                setState(() {
+                                  _isLoading = false;
+                                });
+                              }
+                            }
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepPurple,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text(
+                          'Create Regional Supervisor',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    );
+  }
+
+  // Build supervisor list
+  Widget _buildSupervisorList() {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: FirestoreService.getUsersByType('supervisor'),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+            child: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+            child: Center(child: Text('Error loading supervisors: ${snapshot.error}', style: const TextStyle(color: Colors.red))),
+          );
+        }
+
+        final supervisors = snapshot.data ?? [];
+
+        return Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.deepPurple, Colors.deepPurple.shade700],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.groups, color: Colors.white, size: 28),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Regional Supervisors',
+                          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E)),
+                        ),
+                        const SizedBox(height: 4),
+                        Text('${supervisors.length} active supervisors', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              if (supervisors.isEmpty)
+                Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.supervisor_account_outlined, size: 48, color: Colors.grey[400]),
+                      const SizedBox(height: 16),
+                      Text('No supervisors found', style: TextStyle(fontSize: 16, color: Colors.grey[600])),
+                      const SizedBox(height: 8),
+                      Text('Create supervisors using the form above', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+                    ],
+                  ),
+                )
+              else
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: supervisors.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final member = supervisors[index];
+                    final name = (member['name'] ?? 'Supervisor').toString();
+                    final email = (member['email'] ?? '').toString();
+                    final region = (member['region'] ?? 'Unknown').toString();
+
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: Colors.deepPurple.shade100,
+                            child: Icon(Icons.supervisor_account, color: Colors.deepPurple.shade600),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Icon(Icons.email, size: 14, color: Colors.grey.shade600),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        email,
+                                        style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.shade50,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.amber.shade200),
+                            ),
+                            child: Text(
+                              region,
+                              style: const TextStyle(fontSize: 12, color: Colors.amber, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Create supervisor method
+  Future<void> _createSupervisor({
+    required String name,
+    required String email,
+    required String phone,
+    required String password,
+    required String region,
+  }) async {
+    try {
+      // Create user using secondary Firebase instance to avoid admin logout
+      final userCredential = await _authService.registerSecondaryUser(
+        email,
+        password,
+        name,
+      );
+
+      if (userCredential == null) {
+        throw Exception('Failed to create user account');
+      }
+
+      // Create user document in Firestore with userType: 'supervisor' and assigned region
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userCredential.user?.uid)
+          .set({
+            'name': name,
+            'email': email,
+            'userType': 'supervisor',
+            'phoneNumber': phone,
+            'region': region,
+            'createdAt': FieldValue.serverTimestamp(),
+            'createdBy': _authService.currentUser?.uid,
+          });
+
+      // Send welcome email with credentials
+      await _sendSupervisorWelcomeEmail(email: email, password: password, region: region);
+
+      print('✅ Supervisor created: $email in region $region');
+    } catch (e) {
+      print('❌ Error creating supervisor: $e');
+      rethrow;
+    }
+  }
+
+  // Send welcome email with credentials
+  Future<void> _sendSupervisorWelcomeEmail({
+    required String email,
+    required String password,
+    required String region,
+  }) async {
+    try {
+      print('📧 Simulating email to: $email');
+      print('📧 Email content:');
+      print('Subject: Welcome as a Regional Supervisor for RideMate');
+      print('Body: Your supervisor account has been created for the $region region. Email: $email. Password: $password. Use this password to log in and access your dashboard.');
+    } catch (e) {
+      print('❌ Error sending welcome email: $e');
+    }
   }
 
   // Support Team content
@@ -3486,23 +3999,24 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
     required String password,
   }) async {
     try {
-      // Create user in Firebase Authentication
-      final userCredential = await _authService.registerWithEmailAndPassword(
+      // Create user using secondary Firebase instance to avoid admin logout
+      final userCredential = await _authService.registerSecondaryUser(
         email,
         password,
         name,
-        isDriver: false, // Not a driver
       );
 
       if (userCredential == null) {
         throw Exception('Failed to create user account');
       }
 
-      // Update user document in Firestore with userType: 'support team'
+      // Create user document in Firestore with userType: 'support team'
       await FirebaseFirestore.instance
           .collection('users')
           .doc(userCredential.user?.uid)
-          .update({
+          .set({
+            'name': name,
+            'email': email,
             'userType': 'support team',
             'phoneNumber': phone,
             'createdAt': FieldValue.serverTimestamp(),

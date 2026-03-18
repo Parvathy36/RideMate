@@ -31,6 +31,7 @@ class _DriverDashboardState extends State<DriverDashboard>
   bool _hasShownImageUploadDialog = false;
   int _navIndex = 0;
   bool _isTracking = false;
+  final Map<String, TextEditingController> _otpControllers = {};
 
   Future<void> _loadDriverData() async {
     try {
@@ -222,19 +223,25 @@ class _DriverDashboardState extends State<DriverDashboard>
               : Column(
                   children: [
                     Container(
-                      width: 44,
-                      height: 44,
+                      width: 48,
+                      height: 48,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Colors.white.withValues(alpha: 0.06),
+                        color: Colors.white.withValues(alpha: 0.08),
                         border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          width: 1,
+                          color: Colors.amber.withValues(alpha: 0.6),
+                          width: 2,
                         ),
                       ),
-                      child: const Icon(Icons.flash_on, color: Colors.amber),
+                      clipBehavior: Clip.antiAlias,
+                      child: _driverData?['profileImageUrl'] != null
+                          ? Image.network(
+                              _driverData!['profileImageUrl'],
+                              fit: BoxFit.cover,
+                            )
+                          : const Icon(Icons.person, color: Colors.amber),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
                     Container(
                       width: 36,
                       height: 1,
@@ -301,6 +308,9 @@ class _DriverDashboardState extends State<DriverDashboard>
   @override
   void dispose() {
     _fadeController.dispose();
+    for (var controller in _otpControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -447,6 +457,8 @@ class _DriverDashboardState extends State<DriverDashboard>
 
   @override
   Widget build(BuildContext context) {
+    final bool isMobile = Responsive.isMobile(context);
+
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F23),
       body: SafeArea(
@@ -457,8 +469,6 @@ class _DriverDashboardState extends State<DriverDashboard>
             : LayoutBuilder(
                 builder: (context, constraints) {
                   final bool isWide = Responsive.isDesktop(context);
-                  final bool isTablet = Responsive.isTablet(context);
-                  final bool isMobile = Responsive.isMobile(context);
                   final bool showRail = !isMobile; // Hide rail on mobile, show on tablet/desktop
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -471,6 +481,91 @@ class _DriverDashboardState extends State<DriverDashboard>
                 },
               ),
       ),
+      bottomNavigationBar: isMobile && !_isLoading
+          ? Theme(
+              data: ThemeData(
+                splashColor: Colors.transparent,
+                highlightColor: Colors.transparent,
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F0F23),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      blurRadius: 20,
+                      offset: const Offset(0, -5),
+                    ),
+                  ],
+                ),
+                child: SafeArea(
+                  child: BottomNavigationBar(
+                    backgroundColor: Colors.transparent,
+                    elevation: 0,
+                    currentIndex: _navIndex,
+                    type: BottomNavigationBarType.fixed,
+                    selectedItemColor: Colors.amber,
+                    unselectedItemColor: Colors.white60,
+                    selectedLabelStyle: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                    unselectedLabelStyle: const TextStyle(
+                      fontWeight: FontWeight.w400,
+                      fontSize: 12,
+                    ),
+                    onTap: (index) {
+                      setState(() => _navIndex = index);
+                      switch (index) {
+                        case 0:
+                          _showRidesDialog();
+                          break;
+                        case 1:
+                          // Dashboard - already on it
+                          break;
+                        case 2:
+                          _showFeatureDialog('Earnings');
+                          break;
+                        case 3:
+                          _showImageUploadDialog();
+                          break;
+                        case 4:
+                          _showFeatureDialog('Profile');
+                          break;
+                      }
+                    },
+                    items: const [
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.local_taxi_outlined),
+                        activeIcon: Icon(Icons.local_taxi),
+                        label: 'Rides',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.dashboard_outlined),
+                        activeIcon: Icon(Icons.dashboard),
+                        label: 'Home',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.account_balance_wallet_outlined),
+                        activeIcon: Icon(Icons.account_balance_wallet),
+                        label: 'Earnings',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.photo_camera_outlined),
+                        activeIcon: Icon(Icons.photo_camera),
+                        label: 'Upload',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.person_outline),
+                        activeIcon: Icon(Icons.person),
+                        label: 'Profile',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          : null,
     );
   }
 
@@ -480,17 +575,25 @@ class _DriverDashboardState extends State<DriverDashboard>
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Color(0xFF0F0F23), Color(0xFF16213E), Color(0xFF1A1A2E)],
+          colors: [
+            Color(0xFF0F0F23),
+            Color(0xFF131330),
+            Color(0xFF18183D),
+            Color(0xFF161630),
+          ],
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(24.0),
+        padding: EdgeInsets.symmetric(
+          horizontal: Responsive.isMobile(context) ? 16.0 : 24.0,
+          vertical: 24.0,
+        ),
         child: Column(
           children: [
             // Header
             _buildHeader(),
 
-            const SizedBox(height: 30),
+            const SizedBox(height: 24),
 
             // Main content
             Expanded(
@@ -531,36 +634,41 @@ class _DriverDashboardState extends State<DriverDashboard>
                           ),
                           child: Row(
                             children: [
-                              Container(
-                                width: 60,
-                                height: 60,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(15),
-                                ),
-                                child: Icon(
-                                  _isOnline
-                                      ? Icons.radio_button_checked
-                                      : Icons.radio_button_off,
-                                  color: Colors.white,
-                                  size: 30,
-                                ),
-                              ),
-                              const SizedBox(width: 20),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _isOnline
-                                          ? 'You\'re Online'
-                                          : 'You\'re Offline',
-                                      style: const TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.white,
-                                      ),
+                                Container(
+                                  width: 64,
+                                  height: 64,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.25),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: Colors.white.withValues(alpha: 0.4),
+                                      width: 2,
                                     ),
+                                  ),
+                                  child: Icon(
+                                    _isOnline
+                                        ? Icons.power_settings_new
+                                        : Icons.power_off,
+                                    color: Colors.white,
+                                    size: 32,
+                                  ),
+                                ),
+                                const SizedBox(width: 20),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _isOnline
+                                            ? 'You\'re Online'
+                                            : 'You\'re Offline',
+                                        style: const TextStyle(
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.white,
+                                          letterSpacing: -0.5,
+                                        ),
+                                      ),
                                     const SizedBox(height: 4),
                                     Text(
                                       _isOnline
@@ -595,12 +703,21 @@ class _DriverDashboardState extends State<DriverDashboard>
                         // Stats Grid
                         LayoutBuilder(
                           builder: (context, constraints) {
-                            final crossAxisCount = Responsive.getGridCrossAxisCount(context, mobile: 1, tablet: 2, desktop: 2);
+                            final crossAxisCount = Responsive.getGridCrossAxisCount(
+                              context,
+                              mobile: 1, // Full width on mobile
+                              tablet: 2,
+                              desktop: 4, // More columns on desktop to reduce size
+                            );
+                            
+                            // Adjust aspect ratio based on screen size
+                            final aspectRatio = crossAxisCount == 1 ? 3.0 : (crossAxisCount == 2 ? 2.5 : 2.2);
+                            
                             return GridView.count(
                               shrinkWrap: true,
                               physics: const NeverScrollableScrollPhysics(),
                               crossAxisCount: crossAxisCount,
-                              childAspectRatio: 2.0, // Make cards wider
+                              childAspectRatio: aspectRatio,
                               crossAxisSpacing: 16,
                               mainAxisSpacing: 16,
                               children: [
@@ -608,29 +725,31 @@ class _DriverDashboardState extends State<DriverDashboard>
                                   'Total Rides',
                                   '${_driverData?['totalRides'] ?? 0}',
                                   Icons.local_taxi,
-                                  Colors.blue,
+                                  const Color(0xFF3B82F6),
                                 ),
                                 _buildStatCard(
                                   'Rating',
                                   '${_driverData?['rating']?.toStringAsFixed(1) ?? '0.0'}',
                                   Icons.star,
-                                  Colors.amber,
+                                  const Color(0xFFF59E0B),
                                 ),
                                 _buildStatCard(
                                   'Earnings',
                                   '₹${_driverData?['totalEarnings']?.toStringAsFixed(0) ?? '0'}',
-                                  Icons.currency_rupee,
-                                  Colors.green,
+                                  Icons.account_balance_wallet,
+                                  const Color(0xFF10B981),
                                 ),
                                 _buildStatCard(
                                   'Status',
                                   _driverData?['isApproved'] == true
                                       ? 'Approved'
                                       : 'Pending',
-                                  Icons.verified,
                                   _driverData?['isApproved'] == true
-                                      ? Colors.green
-                                      : Colors.orange,
+                                      ? Icons.verified
+                                      : Icons.hourglass_top,
+                                  _driverData?['isApproved'] == true
+                                      ? const Color(0xFF10B981)
+                                      : const Color(0xFFF59E0B),
                                 ),
                               ],
                             );
@@ -641,35 +760,59 @@ class _DriverDashboardState extends State<DriverDashboard>
 
                         // Driver Info Card
                         Container(
-                          padding: const EdgeInsets.all(20),
+                          padding: const EdgeInsets.all(24),
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(20),
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Colors.white.withValues(alpha: 0.1),
+                                Colors.white.withValues(alpha: 0.03),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(24),
                             border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.18),
-                              width: 1,
+                              color: Colors.white.withValues(alpha: 0.15),
+                              width: 1.5,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.4),
-                                blurRadius: 20,
-                                spreadRadius: 2,
-                                offset: const Offset(0, 10),
+                                color: Colors.black.withValues(alpha: 0.2),
+                                blurRadius: 24,
+                                offset: const Offset(0, 12),
                               ),
                             ],
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Driver Information',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
-                                ),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.amber.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(
+                                      Icons.person_outline,
+                                      color: Colors.amber,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  const Text(
+                                    'Driver Information',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 24),
                               if (_driverData != null) ...[
                                 _buildInfoRow(
                                   'License ID',
@@ -688,7 +831,6 @@ class _DriverDashboardState extends State<DriverDashboard>
                                   _driverData!['email'] ?? 'N/A',
                                 ),
                               ],
-                              const SizedBox(height: 24),
                             ],
                           ),
                         ),
@@ -1563,47 +1705,73 @@ class _DriverDashboardState extends State<DriverDashboard>
     Color color,
   ) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withValues(alpha: 0.12),
+            Colors.white.withValues(alpha: 0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.18),
-          width: 1,
+          color: Colors.white.withValues(alpha: 0.1),
+          width: 1.5,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
-            blurRadius: 16,
-            offset: const Offset(0, 10),
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 20,
+            spreadRadius: 2,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: Column(
+      child: Row(
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 48,
+            height: 48,
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
+              color: color.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: color.withValues(alpha: 0.3),
+                width: 1.5,
+              ),
             ),
-            child: Icon(icon, color: color, size: 22),
+            child: Icon(icon, color: color, size: 24),
           ),
-          const SizedBox(height: 10),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: -0.5,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            style: const TextStyle(fontSize: 12, color: Colors.white70),
-            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -1612,21 +1780,25 @@ class _DriverDashboardState extends State<DriverDashboard>
 
   Widget _buildInfoRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             label,
-            style: const TextStyle(fontSize: 14, color: Colors.white60),
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.white60,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           Flexible(
             child: Text(
               value,
               style: const TextStyle(
-                fontSize: 14,
+                fontSize: 15,
                 color: Colors.white,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
               ),
               textAlign: TextAlign.right,
             ),
@@ -2736,9 +2908,141 @@ class _DriverDashboardState extends State<DriverDashboard>
                                           ),
                                         ],
                                       ),
-                                    ] else if (status == 'accepted' ||
-                                        status == 'confirmed' ||
-                                        status == 'ongoing') ...[
+                                    ],
+                                    if (status == 'accepted' ||
+                                        status == 'confirmed') ...[
+                                      // OTP Verification Area
+                                      Padding(
+                                        padding: const EdgeInsets.all(12),
+                                        child: Column(
+                                          children: [
+                                            const Text(
+                                              'Enter 4-digit OTP from Rider',
+                                              style: TextStyle(
+                                                color: Colors.white70,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 12),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: TextField(
+                                                    controller: _otpControllers[ride['id']] ??= TextEditingController(),
+                                                    keyboardType: TextInputType.number,
+                                                    maxLength: 4,
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 18,
+                                                      letterSpacing: 4,
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                    textAlign: TextAlign.center,
+                                                    decoration: InputDecoration(
+                                                      hintText: '0000',
+                                                      hintStyle: TextStyle(
+                                                        color: Colors.white.withOpacity(0.2),
+                                                        letterSpacing: 4,
+                                                      ),
+                                                      counterText: '',
+                                                      filled: true,
+                                                      fillColor: Colors.white.withOpacity(0.05),
+                                                      border: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(8),
+                                                        borderSide: BorderSide(
+                                                          color: Colors.white.withOpacity(0.1),
+                                                        ),
+                                                      ),
+                                                      enabledBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(8),
+                                                        borderSide: BorderSide(
+                                                          color: Colors.white.withOpacity(0.1),
+                                                        ),
+                                                      ),
+                                                      focusedBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(8),
+                                                        borderSide: const BorderSide(
+                                                          color: Colors.blue,
+                                                        ),
+                                                      ),
+                                                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                ElevatedButton(
+                                                  onPressed: () async {
+                                                    final enteredOtp = _otpControllers[ride['id']]?.text;
+                                                    if (enteredOtp == null || enteredOtp.length != 4) {
+                                                      ScaffoldMessenger.of(context).showSnackBar(
+                                                        const SnackBar(
+                                                          content: Text('Please enter a 4-digit OTP'),
+                                                          backgroundColor: Colors.orange,
+                                                        ),
+                                                      );
+                                                      return;
+                                                    }
+
+                                                    try {
+                                                      final isValid = await FirestoreService.verifyRideOtp(
+                                                        ride['id'],
+                                                        enteredOtp,
+                                                      );
+
+                                                      if (isValid) {
+                                                        if (mounted) {
+                                                          ScaffoldMessenger.of(context).showSnackBar(
+                                                            const SnackBar(
+                                                              content: Text('OTP Verified! Ride started.'),
+                                                              backgroundColor: Colors.green,
+                                                            ),
+                                                          );
+                                                          // Close and refresh
+                                                          Navigator.of(context).pop();
+                                                          _showRidesDialog();
+                                                        }
+                                                      } else {
+                                                        if (mounted) {
+                                                          ScaffoldMessenger.of(context).showSnackBar(
+                                                            const SnackBar(
+                                                              content: Text('Invalid OTP. Please try again.'),
+                                                              backgroundColor: Colors.red,
+                                                            ),
+                                                          );
+                                                        }
+                                                      }
+                                                    } catch (e) {
+                                                      if (mounted) {
+                                                        ScaffoldMessenger.of(context).showSnackBar(
+                                                          SnackBar(
+                                                            content: Text('Error: $e'),
+                                                            backgroundColor: Colors.red,
+                                                          ),
+                                                        );
+                                                      }
+                                                    }
+                                                  },
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: Colors.blue,
+                                                    foregroundColor: Colors.white,
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 20,
+                                                      vertical: 14,
+                                                    ),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius: BorderRadius.circular(8),
+                                                    ),
+                                                  ),
+                                                  child: const Text('Verify'),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                    if (status == 'ongoing') ...[
                                       Row(
                                         mainAxisAlignment:
                                             MainAxisAlignment.center,
@@ -2786,10 +3090,23 @@ class _DriverDashboardState extends State<DriverDashboard>
                                               }
                                             },
                                             style: ElevatedButton.styleFrom(
-                                              backgroundColor: Colors.blue,
+                                              backgroundColor: Colors.green,
                                               foregroundColor: Colors.white,
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 32,
+                                                vertical: 12,
+                                              ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(25),
+                                              ),
                                             ),
-                                            child: const Text('Complete Ride'),
+                                            child: const Text(
+                                              'Complete Ride',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
+                                              ),
+                                            ),
                                           ),
                                         ],
                                       ),

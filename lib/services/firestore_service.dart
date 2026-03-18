@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'email_service.dart';
 import 'package:flutter/foundation.dart';
 import 'license_validation_service.dart';
 import 'notification_service.dart';
@@ -803,22 +804,54 @@ class FirestoreService {
       final rideData = await getRideById(rideId);
       if (rideData == null) throw Exception('Ride not found');
 
+      // Generate a 4-digit confirmation OTP
+      final otp = EmailService.generateOTP();
+
       await updateRideStatus(rideId, 'accepted', additionalData: {
         'acceptedAt': FieldValue.serverTimestamp(),
+        'confirmationOtp': otp,
       });
 
-      // Notify the rider
+      // Notify the rider via in-app notification
       final riderId = rideData['riderId'] as String?;
       if (riderId != null) {
         await NotificationService.createRideNotification(
           rideId: rideId,
           userId: riderId,
-          message: 'Your ride request has been accepted by the driver!',
+          message: 'Your ride request has been accepted by the driver! Confirmation OTP: $otp',
           type: 'accepted',
         );
+
+        // Send OTP via email
+        final riderEmail = rideData['rider']?['email'] as String?;
+        if (riderEmail != null) {
+          await EmailService.sendOtpEmail(riderEmail, otp);
+        }
       }
     } catch (e) {
       print('❌ Error accepting ride: $e');
+      rethrow;
+    }
+  }
+
+  // Verify ride OTP and start the trip
+  static Future<bool> verifyRideOtp(String rideId, String enteredOtp) async {
+    try {
+      final doc = await _firestore.collection(ridesCollection).doc(rideId).get();
+      if (!doc.exists) throw Exception('Ride not found');
+
+      final rideData = doc.data()!;
+      final correctOtp = rideData['confirmationOtp'] as String?;
+
+      if (correctOtp == enteredOtp) {
+        await updateRideStatus(rideId, 'ongoing', additionalData: {
+          'startedAt': FieldValue.serverTimestamp(),
+        });
+        return true;
+      }
+      return false;
+    } catch (e) {
+      print('❌ Error verifying ride OTP: $e');
       rethrow;
     }
   }
