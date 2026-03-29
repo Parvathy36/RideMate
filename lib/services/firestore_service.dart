@@ -66,6 +66,7 @@ class FirestoreService {
       }
 
       final rideRef = _firestore.collection(ridesCollection).doc();
+      final isPool = rideType == 'Pooling';
       final rideData = <String, dynamic>{
         'rideId': rideRef.id,
         'riderId': user.uid,
@@ -78,6 +79,20 @@ class FirestoreService {
         'pickupAddress': pickupAddress,
         'destinationAddress': destinationAddress,
         'rideType': rideType ?? 'Solo', // Default to Solo if not specified
+        'isPool': isPool,
+        'capacity': isPool ? 4 : 1,
+        'availableSeats': isPool ? 3 : 0, // 4 capacity - 1 for original rider
+        'passengers': [
+          {
+            'uid': user.uid,
+            'name': userData?['name'] ?? user.displayName ?? 'User',
+            'email': user.email,
+            'pickupAddress': pickupAddress,
+            'destinationAddress': destinationAddress,
+            'status': 'request',
+            'joinedAt': Timestamp.now(),
+          }
+        ],
         // Coordinates can be filled later when resolved on map screen
         'pickupLocation': null,
         'destinationLocation': null,
@@ -1750,4 +1765,238 @@ class FirestoreService {
       return {};
     }
   }
+  // Find matching pooled rides based on proximity, direction, and time
+  static Future<List<Map<String, dynamic>>> findMatchingPooledRides({
+    required double pickupLat,
+    required double pickupLng,
+    double? destLat,
+    double? destLng,
+    String? destinationAddress,
+    double radiusInKm = 3.0,
+    int timeBufferMinutes = 30,
+  }) async {
+    try {
+      print('🔍 Searching for matching pooled rides...');
+      final now = DateTime.now();
+      final timeBuffer = Duration(minutes: timeBufferMinutes);
+
+      // Get all pooling rides
+      final querySnapshot = await _firestore
+          .collection(ridesCollection)
+          .where('rideType', isEqualTo: 'Pooling')
+          .get();
+
+      final matchingRides = <Map<String, dynamic>>[];
+
+      for (final doc in querySnapshot.docs) {
+        final data = doc.data();
+        final status = data['status'] as String? ?? '';
+        
+        // Filter by status (rides that are still looking for drivers or just started)
+        if (status != 'request' && status != 'accepted' && status != 'matched') continue;
+
+        // Check if there are available seats
+        final availableSeats = data['availableSeats'] as int? ?? 0;
+        if (availableSeats <= 0) continue;
+
+        // Check pickup proximity
+        final ridePickup = data['pickupLocation'];
+        if (ridePickup == null || ridePickup is! GeoPoint) continue;
+
+        final pickupDist = _calculateDistance(
+          pickupLat,
+          pickupLng,
+          ridePickup.latitude,
+          ridePickup.longitude,
+        );
+
+        if (pickupDist > radiusInKm) continue;
+
+        // Check destination match - prefer coordinates, fallback to address string
+        bool destinationMatch = false;
+        
+        if (destLat != null && destLng != null) {
+          final rideDest = data['destinationLocation'];
+          if (rideDest != null && rideDest is GeoPoint) {
+            final destDist = _calculateDistance(
+              destLat,
+              destLng,
+              rideDest.latitude,
+              rideDest.longitude,
+            );
+            // Allow 5km radius for destination matching
+            if (destDist <= 5.0) {
+              destinationMatch = true;
+            }
+          }
+        }
+
+        // Fallback to address string if coordinate match failed or weren't available
+        if (!destinationMatch && destinationAddress != null) {
+          final rideDestAddr = data['destinationAddress'] as String? ?? '';
+          destinationMatch = rideDestAddr.toLowerCase().contains(destinationAddress.toLowerCase()) || 
+                             destinationAddress.toLowerCase().contains(rideDestAddr.toLowerCase());
+        }
+
+        if (!destinationMatch) continue;
+
+        // Check time buffer
+        final createdAt = data['createdAt'];
+        if (createdAt != null && createdAt is Timestamp) {
+          final rideTime = createdAt.toDate();
+          if (now.difference(rideTime).abs() > timeBuffer) continue;
+        }
+
+        final rideMap = Map<String, dynamic>.from(data);
+        rideMap['id'] = doc.id;
+        rideMap['distanceFromUser'] = pickupDist;
+        matchingRides.add(rideMap);
+      }
+
+      print('📊 Found ${matchingRides.length} matching pooled rides');
+      return matchingRides;
+    } catch (e) {
+      print('❌ Error finding matching pooled rides: $e');
+      return [];
+    }
+  }
+
+  // Join an existing pooled ride
+  static Future<void> joinPooledRide({
+    required String rideId,
+    required int seatsRequested,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) throw Exception('User not signed in');
+
+      final rideRef = _firestore.collection(ridesCollection).doc(rideId);
+      
+      await _firestore.runTransaction((transaction) async {
+        final snapshot = await transaction.get(rideRef);
+        if (!snapshot.exists) throw Exception('Ride not found');
+
+        final data = snapshot.data()!;
+        final availableSeats = data['availableSeats'] as int? ?? 0;
+        final participants = List<String>.from(data['participants'] as List? ?? []);
+        final passengers = List<Map<String, dynamic>>.from(data['passengers'] as List? ?? []);
+
+        if (availableSeats < seatsRequested) {
+          throw Exception('Not enough available seats');
+        }
+
+        // Add user as a participant
+        if (!participants.contains(user.uid)) {
+          participants.add(user.uid);
+        }
+
+        // Add passenger entry
+        passengers.add({
+          'uid': user.uid,
+          'name': user.displayName ?? 'User',
+          'email': user.email,
+          'status': 'request',
+          'seats': seatsRequested,
+          'joinedAt': Timestamp.now(),
+          'pickupAddress': data['pickupAddress'], // Simplification: using ride's pickup for now
+          'destinationAddress': data['destinationAddress'],
+        });
+
+        transaction.update(rideRef, {
+          'participants': participants,
+          'passengers': passengers,
+          'availableSeats': availableSeats - seatsRequested,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      });
+
+      print('✅ Successfully joined pooled ride: $rideId');
+    } catch (e) {
+      print('❌ Error joining pooled ride: $e');
+      rethrow;
+    }
+  }
+
+  // Accept/Reject an individual passenger in a pooled ride
+  static Future<void> updatePassengerStatus({
+    required String rideId,
+    required String passengerUid,
+    required String status, // 'joined', 'rejected', 'ongoing', 'completed'
+  }) async {
+    try {
+      final rideRef = _firestore.collection(ridesCollection).doc(rideId);
+      
+      await _firestore.runTransaction((transaction) async {
+        final snapshot = await transaction.get(rideRef);
+        if (!snapshot.exists) throw Exception('Ride not found');
+
+        final data = snapshot.data()!;
+        final passengers = List<Map<String, dynamic>>.from(data['passengers'] as List? ?? []);
+        final availableSeats = data['availableSeats'] as int? ?? 0;
+
+        int passengerIndex = passengers.indexWhere((p) => p['uid'] == passengerUid);
+        if (passengerIndex == -1) throw Exception('Passenger not found in this ride');
+
+        final oldStatus = passengers[passengerIndex]['status'];
+        final seats = passengers[passengerIndex]['seats'] as int? ?? 1;
+
+        // If we reject someone who was already joined or requested, 
+        // No seat change needed for request->reject since seats were reserved at join request?
+        // Actually, join request ALREADY reduced availableSeats in my joinPooledRide method.
+        // So if rejected, we should add back the seats.
+        if (status == 'rejected' && oldStatus != 'rejected') {
+           transaction.update(rideRef, {'availableSeats': availableSeats + seats});
+        }
+
+        // Update status
+        passengers[passengerIndex]['status'] = status;
+        passengers[passengerIndex]['updatedAt'] = Timestamp.now();
+
+        // If newly joined, generate OTP and notify passenger
+        if (status == 'joined' && oldStatus != 'joined') {
+           final otp = EmailService.generateOTP();
+           passengers[passengerIndex]['otp'] = otp;
+
+           final passengerEmail = passengers[passengerIndex]['email'] as String?;
+           if (passengerEmail != null && passengerEmail.isNotEmpty) {
+             final driverName = data['driverName'] as String? ?? 'Your Driver';
+             final carModel = data['carModel'] as String? ?? 'Their Vehicle';
+             final carNumber = data['carNumber'] as String? ?? 'Unknown';
+             final pickup = passengers[passengerIndex]['pickupAddress'] as String? ?? data['pickupAddress'] as String? ?? 'Location';
+             
+             EmailService.sendDriverAssignedEmail(
+               toEmail: passengerEmail,
+               driverName: driverName,
+               carModel: carModel,
+               carNumber: carNumber,
+               pickupLocation: pickup,
+               otp: otp,
+             ).catchError((e) => print('Failed to send passenger OTP email: $e'));
+           }
+        }
+
+        transaction.update(rideRef, {
+          'passengers': passengers,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      });
+
+      print('✅ Passenger $passengerUid status updated to $status');
+    } catch (e) {
+      print('❌ Error updating passenger status: $e');
+      rethrow;
+    }
+  }
+
+  // Get a stream of rides for a specific user as a participant
+  static Stream<List<Map<String, dynamic>>> getRidesStreamForUser(String userId) {
+    return _firestore
+        .collection(ridesCollection)
+        .where('participants', arrayContains: userId)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => {'id': doc.id, ...doc.data()})
+            .toList());
+  }
+
 }

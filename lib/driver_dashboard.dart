@@ -1113,6 +1113,7 @@ class _DriverDashboardState extends State<DriverDashboard>
     // Check if this is a pooling ride
     final rideType = ride['rideType'] as String? ?? 'Solo';
     final isPoolingRide = rideType.toLowerCase() == 'pooling';
+    final passengers = ride['passengers'] as List<dynamic>?;
     final sharedRides = ride['sharedRides'] as List<dynamic>?;
 
     showDialog(
@@ -1427,6 +1428,141 @@ class _DriverDashboardState extends State<DriverDashboard>
                     );
                   }).toList(),
                 ],
+
+                // Passengers information for pooling rides (New Schema)
+                if (isPoolingRide && passengers != null && passengers.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  const Divider(color: Colors.white24),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Ride Passengers:',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...passengers.map((passenger) {
+                    final passengerData = passenger as Map<String, dynamic>;
+                    final pName = passengerData['name'] ?? 'Passenger';
+                    final pStatus = passengerData['status'] ?? 'joined';
+                    final pPickup = passengerData['pickupAddress'] ?? 'N/A';
+                    final pDest = passengerData['destinationAddress'] ?? 'N/A';
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.blue.withOpacity(0.2)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.person, color: Colors.blue, size: 18),
+                              const SizedBox(width: 8),
+                              Text(
+                                pName,
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              ),
+                              const Spacer(),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.white10,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  pStatus.toString().toUpperCase(),
+                                  style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              const Icon(Icons.circle, color: Colors.amber, size: 8),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  pPickup,
+                                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.only(left: 3, top: 4, bottom: 4),
+                            child: Icon(Icons.more_vert, color: Colors.white24, size: 12),
+                          ),
+                          Row(
+                            children: [
+                              const Icon(Icons.square, color: Colors.green, size: 8),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  pDest,
+                                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (pStatus == 'request') ...[
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: () async {
+                                      await _updatePassenger(ride['id'], passengerData['uid'], 'joined');
+                                      Navigator.of(context).pop();
+                                      _showRideDetailsDialog(ride); // Re-show updated dialog
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green.withOpacity(0.2),
+                                      foregroundColor: Colors.green,
+                                      elevation: 0,
+                                      padding: EdgeInsets.zero,
+                                      minimumSize: const Size(0, 32),
+                                    ),
+                                    child: const Text('Accept', style: TextStyle(fontSize: 12)),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: () async {
+                                      await _updatePassenger(ride['id'], passengerData['uid'], 'rejected');
+                                      Navigator.of(context).pop();
+                                      _showRideDetailsDialog(ride);
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.red.withOpacity(0.2),
+                                      foregroundColor: Colors.red,
+                                      elevation: 0,
+                                      padding: EdgeInsets.zero,
+                                      minimumSize: const Size(0, 32),
+                                    ),
+                                    child: const Text('Reject', style: TextStyle(fontSize: 12)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ],
               ],
             ),
           ),
@@ -1589,6 +1725,33 @@ class _DriverDashboardState extends State<DriverDashboard>
         );
       },
     );
+  }
+
+  Future<void> _updatePassenger(String rideId, String uid, String status) async {
+    try {
+      await FirestoreService.updatePassengerStatus(
+        rideId: rideId,
+        passengerUid: uid,
+        status: status,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Passenger status updated to $status'),
+            backgroundColor: status == 'joined' ? Colors.green : Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error updating passenger: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<String?> _showRejectMessageDialog() async {
@@ -2448,17 +2611,9 @@ class _DriverDashboardState extends State<DriverDashboard>
                                           vertical: 4,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: Colors.blue.withValues(
-                                            alpha: 0.2,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          border: Border.all(
-                                            color: Colors.blue.withValues(
-                                              alpha: 0.4,
-                                            ),
-                                          ),
+                                          color: Colors.blue.withValues(alpha: 0.2),
+                                          borderRadius: BorderRadius.circular(999),
+                                          border: Border.all(color: Colors.blue.withValues(alpha: 0.4)),
                                         ),
                                         child: const Text(
                                           'POOLING',
@@ -2470,6 +2625,34 @@ class _DriverDashboardState extends State<DriverDashboard>
                                         ),
                                       ),
                                     ],
+                                    if (isPoolingRide &&
+                                        ride['passengers'] != null &&
+                                        (ride['passengers'] as List<dynamic>).any((p) => (p as Map<String, dynamic>)['status'] == 'request'))
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 6),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.red.shade600,
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: const [
+                                              Icon(Icons.person_add, color: Colors.white, size: 12),
+                                              SizedBox(width: 4),
+                                              Text(
+                                                'NEW REQUEST',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 9,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),

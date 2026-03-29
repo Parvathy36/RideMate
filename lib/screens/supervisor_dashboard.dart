@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart' as ll;
+import 'dart:ui';
+import 'dart:math' as math;
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../services/supervisor_analytics_service.dart';
+import '../widgets/analytics_charts.dart';
+import '../utils/location_utils.dart';
 import '../login_page.dart';
 
 class SupervisorDashboard extends StatefulWidget {
@@ -27,6 +34,13 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> with TickerPr
     'Heatmaps',
     'Analytics',
   ];
+
+  String _selectedTimeRange = 'Today';
+  AnalyticsData? _analyticsData;
+  bool _isAnalyticsLoading = false;
+  bool _showMockHeatmap = false;
+  bool _showDashboardDemo = false;
+  bool _showDriversDemo = false;
 
   @override
   void initState() {
@@ -185,6 +199,9 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> with TickerPr
                     setState(() {
                       _selectedIndex = index;
                     });
+                    if (index == 3) {
+                      _loadAnalytics();
+                    }
                   },
                 );
               },
@@ -339,9 +356,58 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> with TickerPr
               ),
             ],
           ),
+          const Spacer(),
+          if (_selectedIndex == 3) _buildTimeRangeSelector(),
         ],
       ),
     );
+  }
+
+  Widget _buildTimeRangeSelector() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _selectedTimeRange,
+          items: ['Today', 'Week', 'Month'].map((String value) {
+            return DropdownMenuItem<String>(
+              value: value,
+              child: Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+            );
+          }).toList(),
+          onChanged: (value) {
+            if (value != null) {
+              setState(() {
+                _selectedTimeRange = value;
+              });
+              _loadAnalytics();
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _loadAnalytics() async {
+    setState(() {
+      _isAnalyticsLoading = true;
+    });
+    try {
+      final data = await SupervisorAnalyticsService.getRegionalAnalytics(_supervisorRegion, _selectedTimeRange);
+      setState(() {
+        _analyticsData = data;
+        _isAnalyticsLoading = false;
+      });
+    } catch (e) {
+      print('Error loading analytics: $e');
+      setState(() {
+        _isAnalyticsLoading = false;
+      });
+    }
   }
 
   Widget _buildSelectedContent() {
@@ -362,14 +428,96 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> with TickerPr
         children: [
           Row(
             children: [
-              Expanded(child: _buildStatCard('Active Drivers', '12', Icons.directions_car, Colors.blue)),
+              Expanded(
+                child: FutureBuilder<List<Map<String, dynamic>>>(
+                  future: FirestoreService.getAllDrivers(),
+                  builder: (context, snapshot) {
+                    String value = '0';
+                    if (_showDashboardDemo) {
+                      value = '12';
+                    } else if (snapshot.hasData) {
+                      final count = snapshot.data!.where((driver) {
+                        final location = driver['currentLocation'];
+                        final region = LocationUtils.getRegionFromLatLng(location);
+                        return region == _supervisorRegion || _supervisorRegion == 'All Regions';
+                      }).length;
+                      value = count.toString();
+                    }
+                    return _buildStatCard('Active Drivers', value, Icons.directions_car, Colors.blue);
+                  },
+                ),
+              ),
               const SizedBox(width: 16),
-              Expanded(child: _buildStatCard('Total Rides Today', '45', Icons.timeline, Colors.green)),
+              Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('rides')
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    String value = '0';
+                    if (_showDashboardDemo) {
+                      value = '48';
+                    } else if (snapshot.hasData) {
+                      final now = DateTime.now();
+                      final todayStart = DateTime(now.year, now.month, now.day);
+                      
+                      final count = snapshot.data!.docs.where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        
+                        // Check if today
+                        final createdAt = data['createdAt'];
+                        if (createdAt is Timestamp) {
+                          if (createdAt.toDate().isBefore(todayStart)) return false;
+                        } else {
+                          return false; // No date, skip
+                        }
+                        
+                        // Check region
+                        if (_supervisorRegion == 'All Regions') return true;
+                        final location = data['pickupLocation'];
+                        final region = LocationUtils.getRegionFromLatLng(location);
+                        return region == _supervisorRegion;
+                      }).length;
+                      value = count.toString();
+                    }
+                    return _buildStatCard('Total Rides Today', value, Icons.timeline, Colors.green);
+                  },
+                ),
+              ),
               const SizedBox(width: 16),
-              Expanded(child: _buildStatCard('Alerts', '2', Icons.warning, Colors.orange)),
+              Expanded(
+                child: FutureBuilder<List<Map<String, dynamic>>>(
+                  future: FirestoreService.getPendingDrivers(),
+                  builder: (context, snapshot) {
+                    String value = '0';
+                    if (_showDashboardDemo) {
+                      value = '3';
+                    } else if (snapshot.hasData) {
+                      value = snapshot.data!.length.toString();
+                    }
+                    return _buildStatCard('Alerts / Pending', value, Icons.warning, Colors.orange);
+                  },
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  _showDashboardDemo = !_showDashboardDemo;
+                });
+              },
+              icon: Icon(_showDashboardDemo ? Icons.visibility_off : Icons.visibility, size: 16),
+              label: Text(_showDashboardDemo ? 'Hide Demo Data' : 'Show Demo Data', style: const TextStyle(fontSize: 12)),
+              style: TextButton.styleFrom(
+                foregroundColor: _showDashboardDemo ? Colors.orange : Colors.deepPurple,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           _buildRecentActivityCard(),
         ],
       ),
@@ -454,20 +602,141 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> with TickerPr
             ),
           ),
           const SizedBox(height: 16),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: 3,
-            separatorBuilder: (context, index) => const Divider(),
-            itemBuilder: (context, index) {
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Colors.deepPurple.shade50,
-                  child: Icon(Icons.local_taxi, color: Colors.deepPurple.shade600),
-                ),
-                title: const Text('Ride Completed'),
-                subtitle: const Text('Driver John Doe • 10 mins ago'),
-                trailing: const Text('\$15.00', style: TextStyle(fontWeight: FontWeight.bold)),
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('rides')
+                .where('status', whereIn: ['request', 'accepted', 'ongoing', 'completed'])
+                .orderBy('createdAt', descending: true)
+                .limit(20)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: Padding(
+                  padding: EdgeInsets.all(20.0),
+                  child: CircularProgressIndicator(),
+                ));
+              }
+
+              final allRides = snapshot.data?.docs ?? [];
+              final regionalActivity = allRides.where((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                if (_supervisorRegion == 'All Regions') return true;
+                
+                final location = data['pickupLocation'];
+                if (location != null) {
+                  final region = LocationUtils.getRegionFromLatLng(location);
+                  if (region == _supervisorRegion) return true;
+                }
+                
+                // Fallback: check explicitly stored region if any
+                return data['region'] == _supervisorRegion;
+              }).toList();
+
+              final List<Map<String, dynamic>> displayData = [];
+              
+              if (_showDashboardDemo) {
+                displayData.addAll(_getMockDashboardActivity());
+              } else {
+                for (var doc in regionalActivity.take(6)) {
+                  displayData.add(doc.data() as Map<String, dynamic>);
+                }
+              }
+
+              if (displayData.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        Icon(Icons.history, size: 48, color: Colors.grey[300]),
+                        const SizedBox(height: 12),
+                        const Text('No recent activity in this region', style: TextStyle(color: Colors.grey)),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              return ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: displayData.length,
+                separatorBuilder: (context, index) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final data = displayData[index];
+                  final status = data['status'] as String? ?? 'request';
+                  final createdAt = data['createdAt'];
+                  final timeAgo = createdAt is Timestamp 
+                      ? _formatTimeAgo(createdAt.toDate())
+                      : (data['timeAgo'] ?? 'Recently');
+                  final driverName = data['driverName'] ?? data['driver']?['name'] ?? 'Driver';
+                  final riderName = data['riderName'] ?? data['rider']?['name'] ?? 'Rider';
+
+                  IconData icon;
+                  Color color;
+                  String title;
+                  String subtitle;
+
+                  switch (status) {
+                    case 'completed':
+                      icon = Icons.check_circle;
+                      color = Colors.green;
+                      title = 'Ride Completed';
+                      subtitle = '$driverName finished ride for $riderName';
+                      break;
+                    case 'ongoing':
+                      icon = Icons.directions_car;
+                      color = Colors.blue;
+                      title = 'Ride in Progress';
+                      subtitle = '$driverName is driving $riderName';
+                      break;
+                    case 'accepted':
+                      icon = Icons.thumb_up;
+                      color = Colors.indigo;
+                      title = 'Ride Matched';
+                      subtitle = '$driverName accepted $riderName\'s request';
+                      break;
+                    default:
+                      icon = Icons.notification_important;
+                      color = Colors.orange;
+                      title = 'New Request';
+                      subtitle = '$riderName is looking for a ride';
+                  }
+
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    leading: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, color: color, size: 20),
+                    ),
+                    title: Row(
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1A1A2E)),
+                        ),
+                        const Spacer(),
+                        Text(
+                          timeAgo,
+                          style: TextStyle(color: Colors.grey[500], fontSize: 11),
+                        ),
+                      ],
+                    ),
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(top: 4.0),
+                      child: Text(
+                        subtitle,
+                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  );
+                },
               );
             },
           ),
@@ -481,67 +750,137 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> with TickerPr
     return FutureBuilder<List<Map<String, dynamic>>>(
       future: FirestoreService.getAllDrivers(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting && !_showDriversDemo) {
            return const Center(child: CircularProgressIndicator());
         }
         
-        if (snapshot.hasError) {
-           return Center(child: Text('Error loading drivers: ${snapshot.error}'));
-        }
-
         final allDrivers = snapshot.data ?? [];
-        // Optional: Filter by supervisor region if you add a 'region' field to drivers later. 
-        // For now displaying all or simulating filtering.
-        final regionalDrivers = allDrivers; 
+        
+        // Filter drivers by region (coords first, then district fallback)
+        final regionalDrivers = allDrivers.where((driver) {
+          if (_supervisorRegion == 'All Regions') return true;
+          
+          final location = driver['currentLocation'];
+          String driverRegion = LocationUtils.getRegionFromLatLng(location);
+          
+          if (driverRegion == 'Unknown') {
+            driverRegion = LocationUtils.getRegionFromDistrict(driver['district']);
+          }
+          
+          return driverRegion == _supervisorRegion;
+        }).toList();
 
-        if (regionalDrivers.isEmpty) {
-          return const Center(child: Text('No drivers found in this region.'));
+        final List<Map<String, dynamic>> displayDrivers = [];
+        if (_showDriversDemo) {
+          displayDrivers.addAll(_getMockDrivers());
+        } else {
+          for (var driver in regionalDrivers) {
+            displayDrivers.add(driver);
+          }
         }
 
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => setState(() => _showDriversDemo = !_showDriversDemo),
+                  icon: Icon(_showDriversDemo ? Icons.visibility_off : Icons.visibility, size: 16),
+                  label: Text(_showDriversDemo ? 'Hide Demo' : 'Show Demo', style: const TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(foregroundColor: _showDriversDemo ? Colors.orange : Colors.deepPurple),
+                ),
               ),
-            ],
-          ),
-          child: ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: regionalDrivers.length,
-            separatorBuilder: (context, index) => const Divider(),
-            itemBuilder: (context, index) {
-              final driver = regionalDrivers[index];
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Colors.blue.shade50,
-                  child: Icon(Icons.person, color: Colors.blue.shade600),
+            ),
+            if (displayDrivers.isEmpty)
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.directions_car_outlined, size: 64, color: Colors.grey[300]),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No drivers found in $_supervisorRegion region.',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                      ),
+                    ],
+                  ),
                 ),
-                title: Text(driver['name'] ?? 'Unknown Driver'),
-                subtitle: Text(driver['email'] ?? ''),
-                trailing: Chip(
-                   label: Text((driver['isApproved'] ?? false) ? 'Approved' : 'Pending'),
-                   backgroundColor: (driver['isApproved'] ?? false) ? Colors.green.shade50 : Colors.orange.shade50,
-                   labelStyle: TextStyle(
-                     color: (driver['isApproved'] ?? false) ? Colors.green.shade700 : Colors.orange.shade700
-                   ),
+              )
+            else
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: displayDrivers.length,
+                    separatorBuilder: (context, index) => const Divider(),
+                    itemBuilder: (context, index) {
+                      final driver = displayDrivers[index];
+                      final bool isApproved = driver['isApproved'] ?? false;
+                      final String driverId = driver['id'] ?? '';
+                      
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.blue.shade50,
+                          child: Icon(Icons.person, color: Colors.blue.shade600),
+                        ),
+                        title: Text(driver['name'] ?? 'Unknown Driver'),
+                        subtitle: Text('${driver['email'] ?? ''}\n${driver['district'] ?? 'Unknown District'}'),
+                        isThreeLine: true,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (!isApproved)
+                              ElevatedButton(
+                                onPressed: _showDriversDemo ? null : () => _approveDriver(driverId),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                                  minimumSize: const Size(60, 32),
+                                ),
+                                child: const Text('Approve', style: TextStyle(fontSize: 11)),
+                              ),
+                            if (!isApproved) const SizedBox(width: 8),
+                            Chip(
+                               label: Text(isApproved ? 'Approved' : 'Pending'),
+                               backgroundColor: isApproved ? Colors.green.shade50 : Colors.orange.shade50,
+                               labelStyle: TextStyle(
+                                 fontSize: 10,
+                                 color: isApproved ? Colors.green.shade700 : Colors.orange.shade700
+                               ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ),
-              );
-            },
-          ),
+              ),
+          ],
         );
       },
     );
   }
 
-  // Heatmaps View (Mock View)
+  // Heatmaps View - Visualising Demand
   Widget _buildHeatmapsView() {
+    final regionCenter = LocationUtils.getRegionCenter(_supervisorRegion);
+    
     return Container(
-       padding: const EdgeInsets.all(24),
        decoration: BoxDecoration(
          color: Colors.white,
          borderRadius: BorderRadius.circular(16),
@@ -553,48 +892,476 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> with TickerPr
            ),
          ],
        ),
-       child: Center(
-         child: Column(
-           mainAxisAlignment: MainAxisAlignment.center,
+       child: ClipRRect(
+         borderRadius: BorderRadius.circular(16),
+         child: Stack(
            children: [
-             Icon(Icons.map, size: 80, color: Colors.grey[300]),
-             const SizedBox(height: 16),
-             Text('Demand Heatmap for $_supervisorRegion', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-             const SizedBox(height: 8),
-             const Text('Visual representation of high rider demand areas will appear here.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+             StreamBuilder<QuerySnapshot>(
+               stream: FirebaseFirestore.instance
+                   .collection('rides')
+                   .where('status', whereIn: ['request', 'accepted', 'ongoing', 'completed'])
+                   .snapshots(),
+               builder: (context, snapshot) {
+                 if (snapshot.connectionState == ConnectionState.waiting) {
+                   return const Center(child: CircularProgressIndicator());
+                 }
+
+                 final allRides = snapshot.data?.docs ?? [];
+                 final regionalRides = allRides.where((doc) {
+                   final data = doc.data() as Map<String, dynamic>;
+                   if (_supervisorRegion == 'All Regions') return true;
+                   
+                   final location = data['pickupLocation'];
+                   final region = LocationUtils.getRegionFromLatLng(location);
+                   return region == _supervisorRegion;
+                 }).toList();
+
+                 final List<CircleMarker> circles = [];
+                 
+                 // Add real data from Firestore
+                 for (var doc in regionalRides) {
+                   final data = doc.data() as Map<String, dynamic>;
+                   final location = data['pickupLocation'] as GeoPoint?;
+                   if (location == null) continue;
+                   
+                   final status = data['status'] as String? ?? 'request';
+                   _addHeatmapCircles(circles, ll.LatLng(location.latitude, location.longitude), status);
+                 }
+
+                 // Add mock data if enabled
+                 if (_showMockHeatmap) {
+                   _addMockHeatmapData(circles);
+                 }
+
+                 return FlutterMap(
+                   options: MapOptions(
+                     initialCenter: regionCenter,
+                     initialZoom: 11.0,
+                   ),
+                   children: [
+                     TileLayer(
+                       urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                       userAgentPackageName: 'com.ridemate.app',
+                     ),
+                     CircleLayer(circles: circles),
+                   ],
+                 );
+               },
+             ),
+             
+             // Premium Glassmorphic Legend
+             Positioned(
+               top: 24,
+               right: 24,
+               child: ClipRRect(
+                 borderRadius: BorderRadius.circular(20),
+                 child: BackdropFilter(
+                   filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                   child: Container(
+                     padding: const EdgeInsets.all(20),
+                     decoration: BoxDecoration(
+                       color: Colors.white.withOpacity(0.8),
+                       borderRadius: BorderRadius.circular(20),
+                       border: Border.all(color: Colors.white.withOpacity(0.5), width: 1.5),
+                       boxShadow: [
+                         BoxShadow(
+                           color: Colors.black.withOpacity(0.1),
+                           blurRadius: 20,
+                           offset: const Offset(0, 10),
+                         ),
+                       ],
+                     ),
+                     child: Column(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       mainAxisSize: MainAxisSize.min,
+                       children: [
+                         Row(
+                           children: [
+                             Container(
+                               padding: const EdgeInsets.all(6),
+                               decoration: BoxDecoration(
+                                 color: Colors.deepPurple.shade50,
+                                 borderRadius: BorderRadius.circular(8),
+                               ),
+                               child: Icon(Icons.legend_toggle, size: 16, color: Colors.deepPurple.shade700),
+                             ),
+                             const SizedBox(width: 10),
+                             const Text(
+                               'Activity Legend', 
+                               style: TextStyle(
+                                 fontWeight: FontWeight.w800, 
+                                 fontSize: 15, 
+                                 color: Color(0xFF1A1A2E),
+                                 letterSpacing: -0.5,
+                               )
+                             ),
+                           ],
+                         ),
+                         const SizedBox(height: 16),
+                         _buildLegendItem('New Requests', Colors.orange, 'Ride Demand'),
+                         const SizedBox(height: 12),
+                         _buildLegendItem('Active Rides', Colors.blue, 'In Progress'),
+                         const SizedBox(height: 12),
+                         _buildLegendItem('Completed', Colors.green, 'Historical Data'),
+                       ],
+                     ),
+                   ),
+                 ),
+               ),
+             ),
+             
+             // Region Indicator
+             Positioned(
+               bottom: 16,
+               left: 16,
+               child: Container(
+                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                 decoration: BoxDecoration(
+                   color: Colors.deepPurple.withOpacity(0.9),
+                   borderRadius: BorderRadius.circular(20),
+                   boxShadow: [
+                     BoxShadow(color: Colors.deepPurple.withAlpha(75), blurRadius: 8, offset: const Offset(0, 4)),
+                   ],
+                 ),
+                 child: Text(
+                   'Viewing: $_supervisorRegion Activity',
+                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                 ),
+               ),
+             ),
+             
+             // Mock Data Toggle
+             Positioned(
+               bottom: 16,
+               right: 16,
+               child: Column(
+                 crossAxisAlignment: CrossAxisAlignment.end,
+                 children: [
+                   if (_showMockHeatmap)
+                     Container(
+                       margin: const EdgeInsets.only(bottom: 8),
+                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                       decoration: BoxDecoration(
+                         color: Colors.orange.withOpacity(0.9),
+                         borderRadius: BorderRadius.circular(12),
+                       ),
+                       child: const Text(
+                         'Demo Data Active',
+                         style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                       ),
+                     ),
+                   FloatingActionButton.extended(
+                     onPressed: () {
+                       setState(() {
+                         _showMockHeatmap = !_showMockHeatmap;
+                       });
+                     },
+                     backgroundColor: _showMockHeatmap ? Colors.orange : Colors.deepPurple,
+                     icon: Icon(_showMockHeatmap ? Icons.visibility_off : Icons.visibility, color: Colors.white),
+                     label: Text(
+                       _showMockHeatmap ? 'Hide Demo' : 'Show Demo',
+                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                     ),
+                   ),
+                 ],
+               ),
+             ),
            ],
          ),
        )
     );
   }
 
-  // Analytics View (Mock View)
-  Widget _buildAnalyticsView() {
-    return Container(
-       padding: const EdgeInsets.all(24),
-       decoration: BoxDecoration(
-         color: Colors.white,
-         borderRadius: BorderRadius.circular(16),
-         boxShadow: [
-           BoxShadow(
-             color: Colors.black.withOpacity(0.05),
-             blurRadius: 10,
-             offset: const Offset(0, 2),
-           ),
-         ],
-       ),
-       child: Center(
-         child: Column(
-           mainAxisAlignment: MainAxisAlignment.center,
-           children: [
-             Icon(Icons.insert_chart, size: 80, color: Colors.grey[300]),
-             const SizedBox(height: 16),
-             Text('Analytics corresponding to $_supervisorRegion', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-             const SizedBox(height: 8),
-             const Text('Detailed ride performance and revenue analytics charts will be displayed here.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
-           ],
-         ),
-       )
+  Widget _buildLegendItem(String label, Color color, String sublabel) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.2),
+            shape: BoxShape.circle,
+            border: Border.all(color: color.withOpacity(0.5), width: 1.5),
+          ),
+          child: Center(
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E))),
+            Text(sublabel, style: TextStyle(fontSize: 10, color: Colors.grey[600])),
+          ],
+        ),
+      ],
     );
+  }
+
+  // Analytics View
+  Widget _buildAnalyticsView() {
+    if (_isAnalyticsLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_analyticsData == null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.analytics_outlined, size: 80, color: Colors.grey[300]),
+            const SizedBox(height: 16),
+            const Text('No analytics data available', style: TextStyle(fontSize: 18, color: Colors.grey)),
+            const SizedBox(height: 16),
+            ElevatedButton(onPressed: _loadAnalytics, child: const Text('Reload Analytics')),
+          ],
+        ),
+      );
+    }
+
+    final data = _analyticsData!;
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Stat Cards
+          Row(
+            children: [
+              Expanded(
+                child: StatSummaryCard(
+                  title: 'Total Rides',
+                  value: data.totalRides.toString(),
+                  icon: Icons.directions_car,
+                  color: Colors.blue,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: StatSummaryCard(
+                  title: 'Completion Rate',
+                  value: '${data.completionRate.toStringAsFixed(1)}%',
+                  icon: Icons.check_circle,
+                  color: Colors.green,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: StatSummaryCard(
+                  title: 'Total Revenue',
+                  value: '₹${data.totalRevenue.toStringAsFixed(0)}',
+                  icon: Icons.payments,
+                  color: Colors.deepPurple,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: StatSummaryCard(
+                  title: 'Avg. Fare',
+                  value: '₹${data.averageFare.toStringAsFixed(0)}',
+                  icon: Icons.analytics,
+                  color: Colors.orange,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          
+          // Charts Row 1
+          Row(
+            children: [
+              Expanded(child: RideVolumeChart(data: data.volumeTrend)),
+              const SizedBox(width: 24),
+              Expanded(child: RevenueTrendChart(data: data.revenueTrend)),
+            ],
+          ),
+          const SizedBox(height: 24),
+          
+          // Charts Row 2
+          Row(
+            children: [
+              Expanded(flex: 3, child: StatusDistributionChart(distribution: data.statusDistribution)),
+              const SizedBox(width: 24),
+              Expanded(
+                flex: 2,
+                child: Container(
+                  height: 300,
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.deepPurple,
+                    borderRadius: BorderRadius.circular(20),
+                    image: const DecorationImage(
+                      image: NetworkImage('https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?q=80&w=2069&auto=format&fit=crop'),
+                      fit: BoxFit.cover,
+                      opacity: 0.15,
+                    ),
+                  ),
+                  child: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                        'Regional Efficiency',
+                        style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Track and optimize driver distribution to improve ride matching speed.',
+                        style: TextStyle(color: Colors.white70, fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+  List<Map<String, dynamic>> _getMockDrivers() {
+    return [
+      {
+        'id': 'mock_1',
+        'name': 'Rajesh Kumar',
+        'email': 'rajesh.k@example.com',
+        'district': 'Ernakulam',
+        'isApproved': true,
+      },
+      {
+        'id': 'mock_2',
+        'name': 'Saritha Nair',
+        'email': 'saritha.n@example.com',
+        'district': 'Thrissur',
+        'isApproved': false,
+      },
+      {
+        'id': 'mock_3',
+        'name': 'Gautham S.',
+        'email': 'gautham.s@example.com',
+        'district': 'Palakkad',
+        'isApproved': false,
+      },
+      {
+        'id': 'mock_4',
+        'name': 'Meena P.',
+        'email': 'meena.p@example.com',
+        'district': 'Idukki',
+        'isApproved': true,
+      },
+    ];
+  }
+
+  Future<void> _approveDriver(String driverId) async {
+    try {
+      await FirestoreService.updateDriverApprovalStatus(
+        userId: driverId,
+        isApproved: true,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Driver approved successfully')),
+      );
+      setState(() {}); // Refresh view
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error approving driver: $e')),
+      );
+    }
+  }
+
+  List<Map<String, dynamic>> _getMockDashboardActivity() {
+    return [
+      {
+        'status': 'completed',
+        'driverName': 'Suresh Kumar',
+        'riderName': 'Anjali M.',
+        'timeAgo': '15m ago',
+      },
+      {
+        'status': 'ongoing',
+        'driverName': 'Rahul R.',
+        'riderName': 'Meera K.',
+        'timeAgo': 'Just now',
+      },
+      {
+        'status': 'accepted',
+        'driverName': 'Vinod P.',
+        'riderName': 'Arjun V.',
+        'timeAgo': '2m ago',
+      },
+      {
+        'status': 'request',
+        'riderName': 'Priya S.',
+        'timeAgo': '5m ago',
+      },
+    ];
+  }
+
+  void _addHeatmapCircles(List<CircleMarker> circles, ll.LatLng point, String status) {
+    Color color;
+    switch (status) {
+      case 'completed':
+        color = Colors.green;
+        break;
+      case 'accepted':
+      case 'ongoing':
+        color = Colors.blue;
+        break;
+      default:
+        color = Colors.orange;
+    }
+
+    // Layered circles for heatmap effect
+    circles.add(CircleMarker(
+      point: point,
+      radius: 1500,
+      useRadiusInMeter: true,
+      color: color.withOpacity(0.1),
+    ));
+    circles.add(CircleMarker(
+      point: point,
+      radius: 800,
+      useRadiusInMeter: true,
+      color: color.withOpacity(0.2),
+    ));
+    circles.add(CircleMarker(
+      point: point,
+      radius: 10,
+      useRadiusInMeter: false,
+      color: color,
+      borderColor: Colors.white,
+      borderStrokeWidth: 2,
+    ));
+  }
+
+  void _addMockHeatmapData(List<CircleMarker> circles) {
+    final center = LocationUtils.getRegionCenter(_supervisorRegion);
+    final random = math.Random();
+    
+    // Add 15 mock points around the center
+    for (int i = 0; i < 15; i++) {
+      final latOffset = (random.nextDouble() - 0.5) * 0.15;
+      final lngOffset = (random.nextDouble() - 0.5) * 0.15;
+      final point = ll.LatLng(center.latitude + latOffset, center.longitude + lngOffset);
+      
+      final statuses = ['completed', 'ongoing', 'request'];
+      final status = statuses[random.nextInt(statuses.length)];
+      
+      _addHeatmapCircles(circles, point, status);
+    }
+  }
+
+  String _formatTimeAgo(DateTime dateTime) {
+    final difference = DateTime.now().difference(dateTime);
+    if (difference.inDays > 0) return '${difference.inDays}d ago';
+    if (difference.inHours > 0) return '${difference.inHours}h ago';
+    if (difference.inMinutes > 0) return '${difference.inMinutes}m ago';
+    return 'Just now';
   }
 }

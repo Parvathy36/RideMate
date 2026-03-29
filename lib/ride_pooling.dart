@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/firestore_service.dart';
+import 'home.dart';
 
 class RidePoolingPage extends StatefulWidget {
   final String rideId;
@@ -63,31 +65,17 @@ class _RidePoolingPageState extends State<RidePoolingPage> {
     });
 
     try {
-      // Get all rides with similar destination
-      final allRides = await FirestoreService.getAllRides();
-
       if (_ride != null && mounted) {
-        final currentDestination =
-            _ride!['destinationAddress'] as String? ?? '';
+        final pickup = _ride!['pickupLocation'] as GeoPoint?;
+        // Use the new service method that handles proximity, status, and destination
+        final matchingRides = await FirestoreService.findMatchingPooledRides(
+          pickupLat: pickup?.latitude ?? 0.0,
+          pickupLng: pickup?.longitude ?? 0.0,
+          destinationAddress: _ride!['destinationAddress'] as String? ?? '',
+        );
 
-        // Filter rides with matching destinations (excluding current ride)
-        final matchingRides = allRides.where((ride) {
-          // Skip the current ride
-          if (ride['id'] == widget.rideId) return false;
-
-          // Check if status is appropriate for pooling
-          final status = ride['status'] as String? ?? '';
-          if (status != 'request' && status != 'matched') return false;
-
-          // Check if destination matches (simple string matching for now)
-          final rideDestination = ride['destinationAddress'] as String? ?? '';
-          return rideDestination.toLowerCase().contains(
-                currentDestination.toLowerCase(),
-              ) ||
-              currentDestination.toLowerCase().contains(
-                rideDestination.toLowerCase(),
-              );
-        }).toList();
+        // Filter out the current ride
+        matchingRides.removeWhere((ride) => ride['id'] == widget.rideId);
 
         if (mounted) {
           setState(() {
@@ -106,31 +94,40 @@ class _RidePoolingPageState extends State<RidePoolingPage> {
     }
   }
 
-  Future<void> _sendRideRequest(String targetRideId) async {
+  Future<void> _joinSharedRide(String targetRideId) async {
     setState(() {
       _requestError = null;
     });
 
     try {
-      // Create a shared ride request in Firestore
-      await FirestoreService.createSharedRideRequest(
-        rideId: widget.rideId,
-        targetRideId: targetRideId,
-        numberOfMembers: _numberOfMembers,
+      // Join the existing pooled ride
+      await FirestoreService.joinPooledRide(
+        rideId: targetRideId,
+        seatsRequested: _numberOfMembers,
       );
+
+      // Cancel the current ride request as the user has joined another one
+      await FirestoreService.updateRideStatus(widget.rideId, 'cancelled', additionalData: {
+        'cancellationReason': 'Joined an existing pooled ride',
+      });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Ride request sent successfully!'),
+            content: Text('Joined ride successfully! Pending driver approval.'),
             backgroundColor: Colors.green,
           ),
+        );
+        // Redirect to home
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const HomePage()),
+          (route) => route.isFirst,
         );
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _requestError = 'Failed to send ride request: $e';
+          _requestError = 'Failed to join ride: $e';
         });
       }
     }
@@ -366,13 +363,13 @@ class _RidePoolingPageState extends State<RidePoolingPage> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () => _sendRideRequest(ride['id']),
+                    onPressed: () => _joinSharedRide(ride['id']),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.deepPurple,
                       foregroundColor: Colors.white, // Text color
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    child: const Text('Request'),
+                    child: const Text('Join Ride'),
                   ),
                 ),
               ],

@@ -101,9 +101,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color.fromARGB(255, 251, 250, 253),
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color.fromARGB(255, 251, 250, 253)),
             child: const Text('Escalate'),
           ),
         ],

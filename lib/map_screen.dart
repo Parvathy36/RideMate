@@ -47,6 +47,8 @@ class _MapScreenState extends State<MapScreen> {
   double? _durationMin;
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
+  List<Map<String, dynamic>> _matchingRides = [];
+  bool _loadingMatchingRides = false;
 
   @override
   void initState() {
@@ -134,6 +136,11 @@ class _MapScreenState extends State<MapScreen> {
 
       // Fit map to polyline or endpoints after build
       WidgetsBinding.instance.addPostFrameCallback((_) => _fitToPolyline());
+
+      // If pooling, fetch matching rides
+      if (_rideType?.toLowerCase() == 'pooling' && _pickup != null) {
+        _loadMatchingPooledRides();
+      }
     } catch (e) {
       print('Map initialization error: $e');
       _error = 'Failed to load map: $e';
@@ -335,6 +342,21 @@ class _MapScreenState extends State<MapScreen> {
 
     // Add nearby driver markers
     _addNearbyDriverMarkers(markers);
+
+    // Add matched pooled ride markers
+    for (final matchedRide in _matchingRides) {
+      final ridePickup = matchedRide['pickupLocation'] as GeoPoint?;
+      if (ridePickup != null) {
+        markers.add(
+          Marker(
+            width: 80.0,
+            height: 80.0,
+            point: LatLng(ridePickup.latitude, ridePickup.longitude),
+            child: const Icon(Icons.people, size: 40.0, color: Colors.blueAccent),
+          ),
+        );
+      }
+    }
 
     if (_route.isNotEmpty) {
       polylines.add(
@@ -607,6 +629,39 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  Future<void> _loadMatchingPooledRides() async {
+    setState(() {
+      _loadingMatchingRides = true;
+    });
+    try {
+      final matches = await FirestoreService.findMatchingPooledRides(
+        pickupLat: _pickup!.latitude,
+        pickupLng: _pickup!.longitude,
+        destLat: _destination?.latitude,
+        destLng: _destination?.longitude,
+        destinationAddress: _ride!['destinationAddress'] as String? ?? '',
+      );
+
+      // Remove current ride from matches if any
+      matches.removeWhere((m) => m['id'] == widget.rideId);
+
+      if (mounted) {
+        setState(() {
+          _matchingRides = matches;
+          _loadingMatchingRides = false;
+        });
+        _updateMarkersAndPolylines();
+      }
+    } catch (e) {
+      print('❌ Error loading matching pooled rides: $e');
+      if (mounted) {
+        setState(() {
+          _loadingMatchingRides = false;
+        });
+      }
+    }
+  }
+
   // Add nearby driver markers to the map
   void _addNearbyDriverMarkers(Set<Marker> markers) {
     // This will be called after drivers are loaded in the FutureBuilder
@@ -688,86 +743,309 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Widget _buildAvailableDriversList() {
-    return FutureBuilder<List<Driver>>(
-      future: _getAvailableDrivers(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(20),
-              child: CircularProgressIndicator(color: Colors.deepPurple),
-            ),
-          );
-        }
-
-        if (snapshot.hasError) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, color: Colors.red, size: 48),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Failed to load drivers',
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+    return Column(
+      children: [
+        if (_rideType?.toLowerCase() == 'pooling') ...[
+          _buildMatchedRidesSection(),
+          const Divider(height: 1, color: Colors.black12),
+        ],
+        Expanded(
+          child: FutureBuilder<List<Driver>>(
+            future: _getAvailableDrivers(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: CircularProgressIndicator(color: Colors.deepPurple),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Please try again later',
-                    style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
+                );
+              }
 
-        final drivers = snapshot.data ?? [];
-
-        if (drivers.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.local_taxi_outlined,
-                    color: Colors.grey,
-                    size: 48,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No nearby drivers found',
-                    style: TextStyle(
-                      color: Colors.grey.shade600,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
+              if (snapshot.hasError) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Failed to load drivers',
+                          style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Please try again later',
+                          style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'No drivers within 5km radius',
-                    style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+                );
+              }
+
+              final drivers = snapshot.data ?? [];
+
+              if (drivers.isEmpty) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.local_taxi_outlined,
+                          color: Colors.grey,
+                          size: 48,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No nearby drivers found',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'No drivers within 5km radius',
+                          style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
+                );
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: drivers.length,
+                itemBuilder: (context, index) {
+                  final driver = drivers[index];
+                  return _buildDriverCard(driver);
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMatchedRidesSection() {
+    if (_loadingMatchingRides) {
+      return const Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_matchingRides.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+          child: Row(
+            children: [
+              const Icon(Icons.groups, color: Colors.deepPurple, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Available Pooled Rides',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A1A2E),
+                ),
               ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${_matchingRides.length} matches',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 180,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _matchingRides.length,
+            itemBuilder: (context, index) {
+              final ride = _matchingRides[index];
+              return _buildMatchedRideCard(ride);
+            },
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildMatchedRideCard(Map<String, dynamic> ride) {
+    final riderName = ride['rider']?['name'] ?? 'User';
+    final availableSeats = ride['availableSeats'] as int? ?? 0;
+    final distance = ride['distanceFromUser'] as double? ?? 0.0;
+    final destination = ride['destinationAddress'] as String? ?? 'Unknown';
+
+    return Container(
+      width: 250,
+      margin: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: Colors.blue.shade100,
+                child: const Icon(Icons.person, size: 20, color: Colors.blue),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  riderName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  '$availableSeats seats',
+                  style: const TextStyle(fontSize: 9, color: Colors.blue, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Icon(Icons.location_on, size: 14, color: Colors.grey),
+              const SizedBox(width: 4),
+              Text(
+                '${distance.toStringAsFixed(1)} km away',
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              const Icon(Icons.flag, size: 14, color: Colors.grey),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  destination,
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          SizedBox(
+            width: double.infinity,
+            height: 32,
+            child: ElevatedButton(
+              onPressed: () => _joinRide(ride['id']),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Join Ride', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _joinRide(String rideId) async {
+    try {
+      // Show confirmation dialog or just join
+      final bool? confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Join Pooled Ride'),
+          content: const Text('Do you want to join this shared ride?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Join')),
+          ],
+        ),
+      );
+
+      if (confirm == true) {
+        // Show loading
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Joining ride...')));
+        
+        await FirestoreService.joinPooledRide(
+          rideId: rideId,
+          seatsRequested: 1, // Defaulting to 1 for simplicity
+        );
+
+        // Cancel current ride request as user has joined another one
+        await FirestoreService.updateRideStatus(widget.rideId, 'cancelled', additionalData: {
+          'cancellationReason': 'Joined an existing pooled ride',
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Joined ride successfully!'), backgroundColor: Colors.green),
+          );
+          // Navigate back to home
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const HomePage()),
+            (route) => route.isFirst,
           );
         }
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: drivers.length,
-          itemBuilder: (context, index) {
-            final driver = drivers[index];
-            return _buildDriverCard(driver);
-          },
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to join ride: $e'), backgroundColor: Colors.red),
         );
-      },
-    );
+      }
+    }
   }
 
   Widget _buildDriverCard(Driver driver) {

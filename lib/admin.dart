@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/auth_service.dart';
 import 'services/firestore_service.dart';
+import 'widgets/admin_analytics_dashboard.dart';
 import 'login_page.dart';
 
 class AdminPage extends StatefulWidget {
@@ -2102,13 +2103,7 @@ class _AdminPageState extends State<AdminPage> with TickerProviderStateMixin {
 
   // Analytics content
   Widget _buildAnalyticsContent() {
-    return const Center(
-      child: Text(
-        'Analytics & Reports\nComing Soon...',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 18, color: Colors.grey),
-      ),
-    );
+    return const AdminAnalyticsDashboard();
   }
 
   // Settings content

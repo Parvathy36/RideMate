@@ -190,9 +190,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             _showRejectionMessage(ride);
           }
         } else if (status == 'cancelled') {
-          // Show cancellation message for cancelled rides
-          if (mounted) {
-            _showCancellationMessage(ride);
+          // Check if this was an intentional cancellation (e.g., joining a pooled ride)
+          final cancellationReason = ride['cancellationReason'] as String?;
+          if (cancellationReason != 'Joined an existing pooled ride') {
+            // Show cancellation message for cancelled rides
+            if (mounted) {
+              _showCancellationMessage(ride);
+            }
           }
         }
       }
@@ -1644,6 +1648,199 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       builder: (BuildContext context) {
         return NotificationPanel();
       },
+    );
+  }
+
+  // Active Rides Section for persistent status visibility
+  Widget _buildActiveRidesSection() {
+    final user = _authService.currentUser;
+    if (user == null) return const SizedBox.shrink();
+
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: FirestoreService.getRidesStreamForUser(user.uid),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final activeRides = snapshot.data!
+            .where((ride) =>
+                ride['status'] == 'request' ||
+                ride['status'] == 'accepted' ||
+                ride['status'] == 'matched' ||
+                ride['status'] == 'ongoing')
+            .toList();
+
+        if (activeRides.isEmpty) return const SizedBox.shrink();
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'Active & Pending Rides',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF1A1A2E),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.deepPurple.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${activeRides.length}',
+                      style: const TextStyle(
+                        color: Colors.deepPurple,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: activeRides.length,
+                itemBuilder: (context, index) {
+                  return _buildActiveRideCard(activeRides[index]);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildActiveRideCard(Map<String, dynamic> ride) {
+    final status = ride['status'] as String? ?? 'unknown';
+    final isPooling = (ride['rideType'] as String?)?.toLowerCase() == 'pooling';
+    final pickup = ride['pickupAddress'] as String? ?? 'N/A';
+    final destination = ride['destinationAddress'] as String? ?? 'N/A';
+
+    Color statusColor = Colors.amber;
+    String statusText = 'Pending Approval';
+
+    if (status == 'accepted' || status == 'matched') {
+      statusColor = Colors.green;
+      statusText = 'Driver Assigned';
+    } else if (status == 'ongoing') {
+      statusColor = Colors.blue;
+      statusText = 'Ride in Progress';
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: Colors.grey.shade200, width: 1),
+      ),
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => MapScreen(rideId: ride['id'])),
+          );
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: isPooling
+                          ? Colors.amber.withOpacity(0.1)
+                          : Colors.deepPurple.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      isPooling ? Icons.people : Icons.person,
+                      color: isPooling ? Colors.amber : Colors.deepPurple,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Current Trip',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      statusText.toUpperCase(),
+                      style: TextStyle(
+                        color: statusColor,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  const Icon(Icons.circle, color: Colors.amber, size: 10),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      pickup,
+                      style: const TextStyle(color: Colors.grey, fontSize: 13),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 4, top: 4, bottom: 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    height: 20,
+                    width: 2,
+                    color: Colors.grey.shade200,
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  const Icon(Icons.square, color: Colors.green, size: 10),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      destination,
+                      style: const TextStyle(color: Colors.grey, fontSize: 13),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

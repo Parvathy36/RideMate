@@ -31,4 +31,26 @@ class EmailService {
       print('❌ Error sending OTP email: $e');
     }
   }
+
+  static Future<void> sendDriverAssignedEmail({
+    required String toEmail,
+    required String driverName,
+    required String carModel,
+    required String carNumber,
+    required String pickupLocation,
+    required String otp,
+  }) async {
+    try {
+      print('📧 Sending Driver Assigned Email to: $toEmail');
+      print('🚘 Driver: $driverName ($carModel - $carNumber)');
+      print('📍 Pickup: $pickupLocation');
+      print('🔢 OTP Code: $otp');
+      print('📝 Message: Your ride is confirmed. Share this OTP with the driver.');
+
+      await Future.delayed(const Duration(seconds: 1)); // Simulate network delay
+      print('✅ Email sent successfully (Mock)');
+    } catch (e) {
+      print('❌ Error sending driver assigned email: $e');
+    }
+  }
 }
