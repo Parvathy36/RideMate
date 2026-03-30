@@ -1,0 +1,97 @@
+﻿Analyzing driver_dashboard.dart...
+
+warning - driver_dashboard.dart:5:8 - Unused import: 'map_screen.dart'. Try removing the import directive. - unused_import
+warning - driver_dashboard.dart:8:8 - Unused import: 'services/driver_assignment_service.dart'. Try removing the import directive. - unused_import
+warning - driver_dashboard.dart:9:8 - Unused import: 'services/ride_cancellation_service.dart'. Try removing the import directive. - unused_import
+warning - driver_dashboard.dart:33:8 - The value of the field '_isTracking' isn't used. Try removing the field, or using it. - unused_field
+warning - driver_dashboard.dart:893:10 - The declaration '_buildRidesSection' isn't referenced. Try removing the declaration of '_buildRidesSection'. - unused_element
+warning - driver_dashboard.dart:927:10 - The declaration '_buildInfoChip' isn't referenced. Try removing the declaration of '_buildInfoChip'. - unused_element
+warning - driver_dashboard.dart:970:10 - The declaration '_buildRidesList' isn't referenced. Try removing the declaration of '_buildRidesList'. - unused_element
+warning - driver_dashboard.dart:1144:8 - The declaration '_showRideDetailsDialog' isn't referenced. Try removing the declaration of '_showRideDetailsDialog'. - unused_element
+warning - driver_dashboard.dart:1898:10 - The declaration '_buildDetailItem' isn't referenced. Try removing the declaration of '_buildDetailItem'. - unused_element
+   info - driver_dashboard.dart:96:11 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:115:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:427:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:429:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:448:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:450:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:1075:11 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:1139:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:1471:22 - Unnecessary use of 'toList' in a spread. Try removing the invocation of 'toList'. - unnecessary_to_list_in_spreads
+   info - driver_dashboard.dart:1499:44 - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss. Try replacing the use of the deprecated member with the replacement. - deprecated_member_use
+   info - driver_dashboard.dart:1501:63 - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss. Try replacing the use of the deprecated member with the replacement. - deprecated_member_use
+   info - driver_dashboard.dart:1569:52 - Don't use 'BuildContext's across async gaps. Try rewriting the code to not use the 'BuildContext', or guard the use with a 'mounted' check. - use_build_context_synchronously
+   info - driver_dashboard.dart:1573:69 - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss. Try replacing the use of the deprecated member with the replacement. - deprecated_member_use
+   info - driver_dashboard.dart:1587:52 - Don't use 'BuildContext's across async gaps. Try rewriting the code to not use the 'BuildContext', or guard the use with a 'mounted' check. - use_build_context_synchronously
+   info - driver_dashboard.dart:1591:67 - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss. Try replacing the use of the deprecated member with the replacement. - deprecated_member_use
+   info - driver_dashboard.dart:1606:22 - Unnecessary use of 'toList' in a spread. Try removing the invocation of 'toList'. - unnecessary_to_list_in_spreads
+   info - driver_dashboard.dart:1628:36 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:1629:44 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:1640:44 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:1666:38 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:1667:46 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:1678:46 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:1701:36 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:1702:44 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:1713:44 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:1739:44 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:1750:44 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:1778:44 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:1788:44 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:2089:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2091:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2104:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2119:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2121:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2179:24 - Unnecessary use of 'toList' in a spread. Try removing the invocation of 'toList'. - unnecessary_to_list_in_spreads
+   info - driver_dashboard.dart:2193:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2209:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2213:5 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2214:5 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2225:9 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2226:9 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2227:9 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2228:9 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2230:9 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2233:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2250:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2254:5 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2270:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2284:5 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2305:5 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2311:5 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2314:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2318:5 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2322:9 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2430:54 - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss. Try replacing the use of the deprecated member with the replacement. - deprecated_member_use
+   info - driver_dashboard.dart:2430:94 - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss. Try replacing the use of the deprecated member with the replacement. - deprecated_member_use
+   info - driver_dashboard.dart:2435:60 - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss. Try replacing the use of the deprecated member with the replacement. - deprecated_member_use
+   info - driver_dashboard.dart:2705:5 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2706:5 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2707:5 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2711:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2714:9 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2721:7 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2728:9 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:2748:25 - Don't invoke 'print' in production code. Try using a logging framework. - avoid_print
+   info - driver_dashboard.dart:3166:42 - Unnecessary use of 'toList' in a spread. Try removing the invocation of 'toList'. - unnecessary_to_list_in_spreads
+   info - driver_dashboard.dart:3187:64 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:3190:53 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:3206:53 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:3249:66 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:3252:55 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:3268:55 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:3336:77 - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss. Try replacing the use of the deprecated member with the replacement. - deprecated_member_use
+   info - driver_dashboard.dart:3341:79 - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss. Try replacing the use of the deprecated member with the replacement. - deprecated_member_use
+   info - driver_dashboard.dart:3345:79 - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss. Try replacing the use of the deprecated member with the replacement. - deprecated_member_use
+   info - driver_dashboard.dart:3351:79 - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss. Try replacing the use of the deprecated member with the replacement. - deprecated_member_use
+   info - driver_dashboard.dart:3386:80 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:3393:72 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:3398:80 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:3408:78 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:3454:53 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:3470:53 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:3524:53 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+   info - driver_dashboard.dart:3539:53 - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check. Guard a 'State.context' use with a 'mounted' check on the State, and other BuildContext use with a 'mounted' check on the BuildContext. - use_build_context_synchronously
+
+93 issues found.

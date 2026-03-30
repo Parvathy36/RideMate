@@ -54,6 +54,48 @@ class _DriverDashboardState extends State<DriverDashboard>
         if (userDoc.exists) merged.addAll(userDoc.data()!);
         if (driverDoc.exists) merged.addAll(driverDoc.data()!);
 
+        try {
+          // Fetch completed rides for this driver to compute stats
+          final ridesQuery = await FirebaseFirestore.instance
+              .collection('rides')
+              .where('driverId', isEqualTo: user.uid)
+              .where('status', isEqualTo: 'completed')
+              .get();
+
+          int totalRides = 0;
+          double totalEarnings = 0.0;
+          double totalRating = 0.0;
+          int ratedRides = 0;
+
+          for (var doc in ridesQuery.docs) {
+            final data = doc.data();
+            totalRides++;
+            
+            // Add fare to earnings
+            if (data['fare'] != null) {
+              totalEarnings += (data['fare'] as num).toDouble();
+            }
+            
+            // Add rating to total if rated
+            if (data['rating'] != null) {
+              totalRating += (data['rating'] as num).toDouble();
+              ratedRides++;
+            } else if (data['driverRating'] != null) {
+              totalRating += (data['driverRating'] as num).toDouble();
+              ratedRides++;
+            }
+          }
+
+          // Update merged data with computed stats
+          merged['totalRides'] = totalRides;
+          merged['totalEarnings'] = totalEarnings;
+          merged['rating'] = ratedRides > 0 
+              ? (totalRating / ratedRides) 
+              : ((merged['rating'] as num?)?.toDouble() ?? 0.0);
+        } catch (e) {
+          print('Error calculating driver stats: $e');
+        }
+
         setState(() {
           _driverData = merged.isNotEmpty ? merged : null;
           _isOnline =
@@ -735,7 +777,7 @@ class _DriverDashboardState extends State<DriverDashboard>
                                 ),
                                 _buildStatCard(
                                   'Earnings',
-                                  '₹${_driverData?['totalEarnings']?.toStringAsFixed(0) ?? '0'}',
+                                  'â‚¹${_driverData?['totalEarnings']?.toStringAsFixed(0) ?? '0'}',
                                   Icons.account_balance_wallet,
                                   const Color(0xFF10B981),
                                 ),
@@ -1200,7 +1242,7 @@ class _DriverDashboardState extends State<DriverDashboard>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '₹${fareEstimate.toStringAsFixed(0)}',
+                  'â‚¹${fareEstimate.toStringAsFixed(0)}',
                   style: const TextStyle(color: Colors.white, fontSize: 16),
                 ),
                 const SizedBox(height: 16),
@@ -1721,6 +1763,43 @@ class _DriverDashboardState extends State<DriverDashboard>
                 child: const Text('Complete Ride'),
               ),
             ],
+            if (status == 'completed' && ride['paymentStatus'] == 'cash_pending') ...[
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  try {
+                    await FirestoreService.updateRidePaymentStatus(
+                      ride['id'],
+                      method: 'cash',
+                      status: 'completed',
+                    );
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Payment confirmed!'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                      _showRidesDialog();
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.money),
+                label: const Text('Confirm Cash Received'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+              ),
+            ],
           ],
         );
       },
@@ -2007,9 +2086,9 @@ class _DriverDashboardState extends State<DriverDashboard>
   // Add this method for debugging Firestore issues
   Future<void> _runFirestoreDebug() async {
     try {
-      print('🚀 Starting Firestore debug...');
+      print('ðŸš€ Starting Firestore debug...');
       await FirestoreService.debugFirestoreAccess();
-      print('✅ Firestore debug completed');
+      print('âœ… Firestore debug completed');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2022,7 +2101,7 @@ class _DriverDashboardState extends State<DriverDashboard>
         );
       }
     } catch (e) {
-      print('❌ Firestore debug failed: $e');
+      print('âŒ Firestore debug failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2037,9 +2116,9 @@ class _DriverDashboardState extends State<DriverDashboard>
   // Add this method for debugging all rides
   Future<void> _runAllRidesDebug() async {
     try {
-      print('🚀 Starting all rides debug...');
+      print('ðŸš€ Starting all rides debug...');
       final allRides = await FirestoreService.getAllRides();
-      print('✅ All rides debug completed. Found ${allRides.length} rides.');
+      print('âœ… All rides debug completed. Found ${allRides.length} rides.');
 
       if (mounted) {
         // Show a dialog with the results
@@ -2111,7 +2190,7 @@ class _DriverDashboardState extends State<DriverDashboard>
         );
       }
     } catch (e) {
-      print('❌ All rides debug failed: $e');
+      print('âŒ All rides debug failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2127,7 +2206,7 @@ class _DriverDashboardState extends State<DriverDashboard>
   Future<void> _showUserInfo() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      print('❌ No current user found');
+      print('âŒ No current user found');
       return;
     }
 
@@ -2148,10 +2227,10 @@ class _DriverDashboardState extends State<DriverDashboard>
         print('  Email: ${driverData?['email']}');
         print('  Is Approved: ${driverData?['isApproved']}');
       } else {
-        print('❌ No driver document found for user ID: ${user.uid}');
+        print('âŒ No driver document found for user ID: ${user.uid}');
       }
     } catch (e) {
-      print('❌ Error fetching driver document: $e');
+      print('âŒ Error fetching driver document: $e');
     }
 
     if (mounted) {
@@ -2168,11 +2247,11 @@ class _DriverDashboardState extends State<DriverDashboard>
   Future<void> _debugRidesForCurrentDriver() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      print('❌ No current user found');
+      print('âŒ No current user found');
       return;
     }
 
-    print('🔍 Debugging rides for current driver: ${user.uid}');
+    print('ðŸ” Debugging rides for current driver: ${user.uid}');
 
     try {
       await FirestoreService.debugRidesForDriver(user.uid);
@@ -2188,7 +2267,7 @@ class _DriverDashboardState extends State<DriverDashboard>
         );
       }
     } catch (e) {
-      print('❌ Driver rides debug failed: $e');
+      print('âŒ Driver rides debug failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2232,7 +2311,7 @@ class _DriverDashboardState extends State<DriverDashboard>
     print('Testing simple dialog');
 
     if (!mounted) {
-      print('❌ Widget not mounted');
+      print('âŒ Widget not mounted');
       return;
     }
 
@@ -2298,6 +2377,11 @@ class _DriverDashboardState extends State<DriverDashboard>
       return;
     }
 
+    if (feature == 'Earnings') {
+      _showEarningsDialog();
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -2314,6 +2398,129 @@ class _DriverDashboardState extends State<DriverDashboard>
           ),
         ],
       ),
+    );
+  }
+
+  void _showEarningsDialog() async {
+    final earnings = _driverData?['totalEarnings']?.toStringAsFixed(0) ?? '0';
+    final totalRides = _driverData?['totalRides']?.toString() ?? '0';
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1A1A2E),
+          title: const Row(
+            children: [
+              Icon(Icons.account_balance_wallet, color: Colors.green, size: 28),
+              SizedBox(width: 12),
+              Text('Your Earnings', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: Container(
+            width: double.maxFinite,
+            constraints: const BoxConstraints(maxHeight: 400),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.green.shade800.withOpacity(0.6), Colors.green.shade500.withOpacity(0.3)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.green.withOpacity(0.5), width: 1),
+                  ),
+                  child: Column(
+                    children: [
+                      const Text('Total Earnings', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                      const SizedBox(height: 8),
+                      Text('â‚¹$earnings', style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                      const SizedBox(height: 8),
+                      Text('$totalRides Completed Rides', style: const TextStyle(color: Colors.greenAccent, fontSize: 13, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Recent Rides', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: FutureBuilder<QuerySnapshot>(
+                    future: FirebaseFirestore.instance
+                        .collection('rides')
+                        .where('driverId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+                        .where('status', isEqualTo: 'completed')
+                        .get(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator(color: Colors.green));
+                      }
+                      
+                      if (snapshot.hasError) {
+                        return Center(child: Text('Error loading history', style: TextStyle(color: Colors.red.shade300)));
+                      }
+
+                      final docs = snapshot.data?.docs ?? [];
+                      if (docs.isEmpty) {
+                        return const Center(
+                          child: Text('No earning history yet', style: TextStyle(color: Colors.white54)),
+                        );
+                      }
+                      
+                      // Sort by createdAt manually if needed
+                      var sortedDocs = docs.toList();
+                      sortedDocs.sort((a, b) {
+                        final aTime = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+                        final bTime = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+                        if (aTime == null) return 1;
+                        if (bTime == null) return -1;
+                        return bTime.compareTo(aTime);
+                      });
+
+                      return ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: sortedDocs.length,
+                        separatorBuilder: (context, index) => const Divider(color: Colors.white12),
+                        itemBuilder: (context, index) {
+                          final data = sortedDocs[index].data() as Map<String, dynamic>;
+                          final rideFare = data['fare'] ?? 0;
+                          final date = data['createdAt'] as Timestamp?;
+                          final dateStr = date != null ? '${date.toDate().day}/${date.toDate().month}/${date.toDate().year}' : 'Unknown date';
+                          final pickup = data['pickupAddress']?.split(',')[0] ?? 'Unknown';
+                          final dest = data['destinationAddress']?.split(',')[0] ?? 'Unknown';
+                          
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: CircleAvatar(
+                              backgroundColor: Colors.white10,
+                              child: const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                            ),
+                            title: Text('$pickup to $dest', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 14)),
+                            subtitle: Text(dateStr, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                            trailing: Text('+â‚¹$rideFare', style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 15)),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close', style: TextStyle(color: Colors.white70)),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -2437,7 +2644,7 @@ class _DriverDashboardState extends State<DriverDashboard>
 
                 _buildProfileInfoRow(
                   'Total Earnings',
-                  '₹${_driverData!['totalEarnings']?.toStringAsFixed(0) ?? '0'}',
+                  'â‚¹${_driverData!['totalEarnings']?.toStringAsFixed(0) ?? '0'}',
                   Icons.account_balance_wallet,
                 ),
                 const SizedBox(height: 12),
@@ -2493,6 +2700,7 @@ class _DriverDashboardState extends State<DriverDashboard>
     );
   }
 
+
   void _showRidesDialogFromList(List<Map<String, dynamic>> rides) {
     print('Showing rides dialog with ${rides.length} rides');
     print('Dialog context: $context');
@@ -2500,7 +2708,7 @@ class _DriverDashboardState extends State<DriverDashboard>
 
     // Print details of each ride for debugging
     if (rides.isNotEmpty) {
-      print('📋 Rides to display in dialog:');
+      print('ðŸ“‹ Rides to display in dialog:');
       for (var i = 0; i < rides.length; i++) {
         final ride = rides[i];
         print(
@@ -2510,7 +2718,7 @@ class _DriverDashboardState extends State<DriverDashboard>
     }
 
     if (!mounted) {
-      print('❌ Widget not mounted, cannot show dialog');
+      print('âŒ Widget not mounted, cannot show dialog');
       return;
     }
 
@@ -2694,7 +2902,7 @@ class _DriverDashboardState extends State<DriverDashboard>
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      '₹${fareEstimate.toStringAsFixed(0)}',
+                                      'â‚¹${fareEstimate.toStringAsFixed(0)}',
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 14,
@@ -3288,6 +3496,72 @@ class _DriverDashboardState extends State<DriverDashboard>
                                               style: TextStyle(
                                                 fontWeight: FontWeight.bold,
                                                 fontSize: 14,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                    if (status == 'completed' &&
+                                        ride['paymentStatus'] ==
+                                            'cash_pending') ...[
+                                      const SizedBox(height: 16),
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          ElevatedButton.icon(
+                                            onPressed: () async {
+                                              try {
+                                                await FirestoreService
+                                                    .updateRidePaymentStatus(
+                                                  ride['id'],
+                                                  method: 'cash',
+                                                  status: 'completed',
+                                                );
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text(
+                                                        'Payment confirmed!',
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.green,
+                                                    ),
+                                                  );
+                                                  _showRidesDialog();
+                                                }
+                                              } catch (e) {
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        'Error: $e',
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.red,
+                                                    ),
+                                                  );
+                                                }
+                                              }
+                                            },
+                                            icon: const Icon(Icons.money),
+                                            label: const Text(
+                                                'Confirm Cash Received'),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.green,
+                                              foregroundColor: Colors.white,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 40,
+                                                      vertical: 16),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
                                               ),
                                             ),
                                           ),

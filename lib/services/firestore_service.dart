@@ -813,6 +813,76 @@ class FirestoreService {
     }
   }
 
+  // Update ride payment status
+  static Future<void> updateRidePaymentStatus(
+    String rideId, {
+    required String method,
+    required String status,
+  }) async {
+    try {
+      await updateRideStatus(rideId, status, additionalData: {
+        'paymentMethod': method,
+        'paymentStatus': status == 'completed' ? 'paid' : status,
+        'paidAt': status == 'completed' ? FieldValue.serverTimestamp() : null,
+      });
+    } catch (e) {
+      print('❌ Error updating ride payment status: $e');
+      rethrow;
+    }
+  }
+
+  // Submit feedback for a ride
+  static Future<void> submitRideFeedback({
+    required String rideId,
+    required String driverId,
+    required double rating,
+    String? comments,
+  }) async {
+    try {
+      final rideRef = _firestore.collection(ridesCollection).doc(rideId);
+      final driverRef = _firestore.collection(driversCollection).doc(driverId);
+      final userRef = _firestore.collection(usersCollection).doc(driverId);
+
+      await _firestore.runTransaction((transaction) async {
+        // 1. Update Ride Feedback
+        transaction.update(rideRef, {
+          'rating': rating,
+          'comments': comments,
+          'feedbackSubmitted': true,
+          'feedbackAt': FieldValue.serverTimestamp(),
+        });
+
+        // 2. Fetch Driver to update average rating
+        final driverDoc = await transaction.get(driverRef);
+        if (driverDoc.exists) {
+          final data = driverDoc.data()!;
+          final currentRating = (data['rating'] as num?)?.toDouble() ?? 0.0;
+          final currentTotalRides = (data['totalRides'] as num?)?.toInt() ?? 0;
+          
+          // Simple average recalculation (Better would be totalRatingSum/ratedRidesCount)
+          // For now, let's assume totalRides is used for average or we calculate it
+          // Actually, let's just increment and average
+          final newTotalRides = currentTotalRides + 1;
+          final newRating = ((currentRating * currentTotalRides) + rating) / newTotalRides;
+
+          final ratingUpdate = {
+            'rating': newRating,
+            'totalRides': newTotalRides,
+            'updatedAt': FieldValue.serverTimestamp(),
+          };
+
+          transaction.update(driverRef, ratingUpdate);
+          transaction.update(userRef, ratingUpdate);
+        }
+      });
+
+      print('✅ Feedback submitted and driver rating updated');
+    } catch (e) {
+      print('❌ Error submitting feedback: $e');
+      rethrow;
+    }
+  }
+
   // Accept a ride request
   static Future<void> acceptRide(String rideId) async {
     try {
@@ -1997,6 +2067,15 @@ class FirestoreService {
         .map((snapshot) => snapshot.docs
             .map((doc) => {'id': doc.id, ...doc.data()})
             .toList());
+  }
+
+  // Get a realtime stream of a specific ride document
+  static Stream<Map<String, dynamic>?> getRideStream(String rideId) {
+    return _firestore
+        .collection(ridesCollection)
+        .doc(rideId)
+        .snapshots()
+        .map((doc) => doc.exists ? {'id': doc.id, ...doc.data()!} : null);
   }
 
 }

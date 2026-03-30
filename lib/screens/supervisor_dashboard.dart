@@ -33,6 +33,7 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> with TickerPr
     'Drivers',
     'Heatmaps',
     'Analytics',
+    'Fraud Monitoring',
   ];
 
   String _selectedTimeRange = 'Today';
@@ -230,6 +231,7 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> with TickerPr
       case 1: return Icons.directions_car;
       case 2: return Icons.map;
       case 3: return Icons.analytics;
+      case 4: return Icons.security;
       default: return Icons.circle;
     }
   }
@@ -416,6 +418,7 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> with TickerPr
       case 1: return _buildDriversView();
       case 2: return _buildHeatmapsView();
       case 3: return _buildAnalyticsView();
+      case 4: return _buildFraudMonitoringView();
       default: return _buildDashboardView();
     }
   }
@@ -1354,6 +1357,149 @@ class _SupervisorDashboardState extends State<SupervisorDashboard> with TickerPr
       final status = statuses[random.nextInt(statuses.length)];
       
       _addHeatmapCircles(circles, point, status);
+    }
+  }
+
+  Widget _buildFraudMonitoringView() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Suspicious Activities & Fraud Alerts',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF1A1A2E),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('suspicious_activities')
+                .orderBy('timestamp', descending: true)
+                .limit(50)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final activities = snapshot.data?.docs ?? [];
+              if (activities.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.verified_user, size: 64, color: Colors.green[300]),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'No suspicious activities detected',
+                        style: TextStyle(color: Colors.grey, fontSize: 16),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              return ListView.builder(
+                itemCount: activities.length,
+                itemBuilder: (context, index) {
+                  final data = activities[index].data() as Map<String, dynamic>;
+                  final docId = activities[index].id;
+                  final reason = data['reason'] ?? 'Unknown Reason';
+                  final userId = data['userId'] ?? 'Unknown User';
+                  final status = data['status'] ?? 'flagged';
+                  final timestamp = data['timestamp'] as Timestamp?;
+                  
+                  final isBlocked = status == 'blocked';
+
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.all(16),
+                      leading: CircleAvatar(
+                        backgroundColor: isBlocked ? Colors.red.shade100 : Colors.orange.shade100,
+                        child: Icon(
+                          isBlocked ? Icons.block : Icons.warning_amber_rounded,
+                          color: isBlocked ? Colors.red : Colors.orange,
+                        ),
+                      ),
+                      title: Text(
+                        reason,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 8),
+                          Text('User ID: $userId'),
+                          if (timestamp != null)
+                            Text('Time: ${_formatTimeAgo(timestamp.toDate())}'),
+                        ],
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (!isBlocked)
+                            TextButton.icon(
+                              onPressed: () => _blockUser(docId, userId),
+                              icon: const Icon(Icons.block, color: Colors.red),
+                              label: const Text('Block', style: TextStyle(color: Colors.red)),
+                            ),
+                          const SizedBox(width: 8),
+                          TextButton.icon(
+                            onPressed: () => _dismissAlert(docId),
+                            icon: const Icon(Icons.check, color: Colors.green),
+                            label: const Text('Dismiss', style: TextStyle(color: Colors.green)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _blockUser(String docId, String userId) async {
+    try {
+      await FirebaseFirestore.instance.collection('suspicious_activities').doc(docId).update({
+        'status': 'blocked'
+      });
+      // Optionally update user document status here
+      await FirebaseFirestore.instance.collection('users').doc(userId).update({
+        'isBlocked': true
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('User has been blocked successfully'), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      print('Error blocking user: $e');
+    }
+  }
+
+  Future<void> _dismissAlert(String docId) async {
+    try {
+      await FirebaseFirestore.instance.collection('suspicious_activities').doc(docId).update({
+        'status': 'dismissed'
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Alert dismissed'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      print('Error dismissing alert: $e');
     }
   }
 

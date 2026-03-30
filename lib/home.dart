@@ -12,6 +12,7 @@ import 'ride_history_page.dart';
 import 'rides_booking.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import "screens/chatbot_screen.dart";
+import 'screens/payment_screen.dart';
 import 'utils/responsive_utils.dart';
 
 class HomePage extends StatefulWidget {
@@ -1668,7 +1669,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ride['status'] == 'request' ||
                 ride['status'] == 'accepted' ||
                 ride['status'] == 'matched' ||
-                ride['status'] == 'ongoing')
+                ride['status'] == 'ongoing' ||
+                (ride['status'] == 'completed' && ride['paymentStatus'] != 'paid'))
             .toList();
 
         if (activeRides.isEmpty) return const SizedBox.shrink();
@@ -1737,6 +1739,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     } else if (status == 'ongoing') {
       statusColor = Colors.blue;
       statusText = 'Ride in Progress';
+    } else if (status == 'completed' && ride['paymentStatus'] != 'paid') {
+      statusColor = Colors.redAccent;
+      statusText = 'Payment Pending';
     }
 
     return Card(
@@ -1748,9 +1753,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       ),
       child: InkWell(
         onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => MapScreen(rideId: ride['id'])),
-          );
+          if (status == 'completed' && ride['paymentStatus'] != 'paid') {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PaymentScreen(
+                  rideId: ride['id'],
+                  rideData: ride,
+                ),
+              ),
+            );
+          } else {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => MapScreen(rideId: ride['id'])),
+            );
+          }
         },
         borderRadius: BorderRadius.circular(20),
         child: Padding(

@@ -12,6 +12,7 @@ import 'home.dart';
 import 'rides_booking.dart';
 import 'ride_pooling.dart';
 import 'utils/responsive_utils.dart';
+import 'screens/payment_screen.dart';
 
 class _OsrmRoute {
   _OsrmRoute({
@@ -49,6 +50,7 @@ class _MapScreenState extends State<MapScreen> {
   Set<Polyline> _polylines = {};
   List<Map<String, dynamic>> _matchingRides = [];
   bool _loadingMatchingRides = false;
+  StreamSubscription? _rideSubscription;
 
   @override
   void initState() {
@@ -149,8 +151,38 @@ class _MapScreenState extends State<MapScreen> {
         setState(() {
           _loading = false;
         });
+        
+        // Listen for real-time updates
+        _rideSubscription ??= FirestoreService.getRideStream(widget.rideId).listen((ride) {
+          if (ride != null && mounted) {
+            final oldStatus = _ride?['status'];
+            final newStatus = ride['status'];
+            
+            setState(() {
+              _ride = ride;
+            });
+
+            if (newStatus == 'completed' && oldStatus != 'completed') {
+              _navigateToPayment(ride);
+            }
+          }
+        });
       }
     }
+  }
+
+  void _navigateToPayment(Map<String, dynamic> rideData) {
+    if (!mounted) return;
+    _rideSubscription?.cancel();
+    _rideSubscription = null;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => PaymentScreen(
+          rideId: widget.rideId,
+          rideData: rideData,
+        ),
+      ),
+    );
   }
 
   LatLng? _extractLatLng(dynamic value) {
@@ -368,6 +400,12 @@ class _MapScreenState extends State<MapScreen> {
       _markers = markers;
       _polylines = polylines;
     });
+  }
+
+  @override
+  void dispose() {
+    _rideSubscription?.cancel();
+    super.dispose();
   }
 
   @override
